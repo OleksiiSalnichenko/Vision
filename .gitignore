@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Project artefacts
+models/*.pt
+out/
+data/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Autopilot local server state
+.autopilot/serve.*

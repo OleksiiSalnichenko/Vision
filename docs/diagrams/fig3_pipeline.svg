@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" font-family="Arial, Helvetica, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#4B5563"/>
+    </marker>
+  </defs>
+  <rect width="1200" height="720" fill="#FFFFFF"/>
+
+  <text x="62" y="32" font-size="13.5" font-weight="bold" fill="#6B7280">STAGE</text>
+  <text x="700" y="32" font-size="13.5" font-weight="bold" fill="#6B7280">WHAT EXISTS AFTER THIS STAGE</text>
+
+  <!-- stage 1 -->
+  <rect x="62" y="46" width="330" height="56" rx="5" fill="#F3F4F6" stroke="#9CA3AF" stroke-width="1.5"/>
+  <text x="227" y="80" font-size="15" text-anchor="middle" fill="#1F2937">Image file on disk</text>
+  <text x="700" y="80" font-size="13.5" fill="#4B5563">JPEG / PNG, arbitrary resolution</text>
+  <path d="M 227 102 L 227 134" stroke="#4B5563" stroke-width="1.8" marker-end="url(#a)"/>
+
+  <!-- stage 2 -->
+  <rect x="62" y="136" width="330" height="56" rx="5" fill="#E7EEF8" stroke="#2F5D8E" stroke-width="1.6"/>
+  <text x="227" y="163" font-size="15" text-anchor="middle" fill="#1B3B5C">core/source.py</text>
+  <text x="227" y="182" font-size="12" text-anchor="middle" fill="#3D6EA0">Source.__iter__</text>
+  <text x="700" y="163" font-size="13.5" fill="#4B5563">Frame(image: ndarray BGR, source: str, index: int)</text>
+  <text x="700" y="182" font-size="12.5" fill="#9CA3AF">identical whether it came from a file, a webcam or RTSP</text>
+  <path d="M 227 192 L 227 224" stroke="#4B5563" stroke-width="1.8" marker-end="url(#a)"/>
+
+  <!-- stage 3 -->
+  <rect x="62" y="226" width="330" height="56" rx="5" fill="#E7EEF8" stroke="#2F5D8E" stroke-width="1.6"/>
+  <text x="227" y="253" font-size="15" text-anchor="middle" fill="#1B3B5C">core/detector.py</text>
+  <text x="227" y="272" font-size="12" text-anchor="middle" fill="#3D6EA0">YOLO26n forward pass</text>
+  <text x="700" y="253" font-size="13.5" fill="#4B5563">approx. 8400 raw candidate boxes</text>
+  <text x="700" y="272" font-size="12.5" fill="#9CA3AF">already de-duplicated inside the model — YOLO26 is NMS-free</text>
+  <path d="M 227 282 L 227 314" stroke="#4B5563" stroke-width="1.8" marker-end="url(#a)"/>
+
+  <!-- stage 4 -->
+  <rect x="62" y="316" width="330" height="56" rx="5" fill="#E7EEF8" stroke="#2F5D8E" stroke-width="1.6"/>
+  <text x="227" y="343" font-size="15" text-anchor="middle" fill="#1B3B5C">Filter</text>
+  <text x="227" y="362" font-size="12" text-anchor="middle" fill="#3D6EA0">conf &gt;= 0.5  AND  class in whitelist</text>
+  <text x="700" y="343" font-size="13.5" fill="#4B5563">a handful of surviving boxes</text>
+  <text x="700" y="362" font-size="12.5" fill="#9CA3AF">near-misses down to conf 0.25 are kept aside for the JSON</text>
+  <path d="M 227 372 L 227 404" stroke="#4B5563" stroke-width="1.8" marker-end="url(#a)"/>
+
+  <!-- stage 5 -->
+  <rect x="62" y="406" width="330" height="56" rx="5" fill="#E7EEF8" stroke="#2F5D8E" stroke-width="1.6"/>
+  <text x="227" y="433" font-size="15" text-anchor="middle" fill="#1B3B5C">core/geometry.py</text>
+  <text x="227" y="452" font-size="12" text-anchor="middle" fill="#3D6EA0">centre and offset</text>
+  <text x="700" y="433" font-size="13.5" fill="#4B5563">Detection with center, dx, dy, dx_pct, dy_pct</text>
+  <text x="700" y="452" font-size="12.5" fill="#9CA3AF">right and down are positive; pct is relative to half the frame</text>
+  <path d="M 227 462 L 227 494" stroke="#4B5563" stroke-width="1.8" marker-end="url(#a)"/>
+
+  <!-- stage 6 -->
+  <rect x="62" y="496" width="330" height="56" rx="5" fill="#FBFCFD" stroke="#9CA3AF" stroke-width="1.5" stroke-dasharray="5 3"/>
+  <text x="227" y="523" font-size="15" text-anchor="middle" fill="#4B5563">core/attributes.py</text>
+  <text x="227" y="542" font-size="12" text-anchor="middle" fill="#9CA3AF">only when --color is passed</text>
+  <text x="700" y="523" font-size="13.5" fill="#4B5563">Detection.color filled in</text>
+  <text x="700" y="542" font-size="12.5" fill="#9CA3AF">k-means over the cropped box; no machine learning involved</text>
+  <path d="M 227 552 L 227 588" stroke="#4B5563" stroke-width="1.8" marker-end="url(#a)"/>
+
+  <!-- fan out -->
+  <rect x="62" y="590" width="330" height="44" rx="5" fill="#FFF8E7" stroke="#B08900" stroke-width="1.7"/>
+  <text x="227" y="618" font-size="15" text-anchor="middle" fill="#7A5E00">list[Detection]  —  final</text>
+
+  <path d="M 392 612 L 470 612" stroke="#4B5563" stroke-width="1.8" marker-end="url(#a)"/>
+  <path d="M 470 612 L 470 664 M 470 612 L 470 560" stroke="#4B5563" stroke-width="1.8"/>
+
+  <rect x="496" y="536" width="300" height="46" rx="5" fill="#E8F4EC" stroke="#2F7D4F" stroke-width="1.5"/>
+  <text x="646" y="565" font-size="14" text-anchor="middle" fill="#1B4D31">core/draw.py  —  window + JPG</text>
+  <rect x="496" y="590" width="300" height="46" rx="5" fill="#E8F4EC" stroke="#2F7D4F" stroke-width="1.5"/>
+  <text x="646" y="619" font-size="14" text-anchor="middle" fill="#1B4D31">core/output.py  —  JSON + console</text>
+  <rect x="496" y="644" width="300" height="46" rx="5" fill="#E7EEF8" stroke="#2F5D8E" stroke-width="1.7"/>
+  <text x="646" y="673" font-size="14" text-anchor="middle" fill="#1B3B5C">core/events.py  —  user callback</text>
+
+  <path d="M 470 560 L 492 560" stroke="#4B5563" stroke-width="1.8" marker-end="url(#a)"/>
+  <path d="M 470 612 L 492 612" stroke="#4B5563" stroke-width="1.8" marker-end="url(#a)"/>
+  <path d="M 470 664 L 492 664" stroke="#4B5563" stroke-width="1.8" marker-end="url(#a)"/>
+
+  <rect x="830" y="536" width="312" height="154" rx="6" fill="#FBFCFD" stroke="#D1D5DB" stroke-width="1.4"/>
+  <text x="850" y="562" font-size="13.5" font-weight="bold" fill="#374151">All three sinks are independent.</text>
+  <text x="850" y="586" font-size="12.5" fill="#6B7280">None of them knows about the others.</text>
+  <text x="850" y="608" font-size="12.5" fill="#6B7280">Phase 3 adds a fourth sink (the Qt</text>
+  <text x="850" y="626" font-size="12.5" fill="#6B7280">widget) without touching any of them.</text>
+  <text x="850" y="654" font-size="12.5" fill="#6B7280">Phase 2 inserts tracker.py between</text>
+  <text x="850" y="672" font-size="12.5" fill="#6B7280">geometry and the fan-out.</text>
+</svg>

@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" font-family="Arial, Helvetica, sans-serif">
+  <defs>
+    <pattern id="hatch" width="7" height="7" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+      <rect width="7" height="7" fill="#F3F4F6"/>
+      <line x1="0" y1="0" x2="0" y2="7" stroke="#9CA3AF" stroke-width="2.4"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="560" fill="#FFFFFF"/>
+
+  <text x="60" y="40" font-size="16" font-weight="bold" fill="#1F2937">YOLO26n throughput by deployment target</text>
+  <text x="60" y="62" font-size="13" fill="#6B7280">640 x 640 input. Higher is smoother; it does not mean more accurate.</text>
+
+  <!-- gridlines -->
+  <g stroke="#E5E7EB" stroke-width="1">
+    <line x1="140" y1="80" x2="1120" y2="80"/>
+    <line x1="140" y1="128.6" x2="1120" y2="128.6"/>
+    <line x1="140" y1="177.1" x2="1120" y2="177.1"/>
+    <line x1="140" y1="225.7" x2="1120" y2="225.7"/>
+    <line x1="140" y1="274.3" x2="1120" y2="274.3"/>
+    <line x1="140" y1="322.9" x2="1120" y2="322.9"/>
+    <line x1="140" y1="371.4" x2="1120" y2="371.4"/>
+  </g>
+  <g font-size="12.5" fill="#9CA3AF" text-anchor="end">
+    <text x="128" y="85">35</text>
+    <text x="128" y="133">30</text>
+    <text x="128" y="182">25</text>
+    <text x="128" y="230">20</text>
+    <text x="128" y="279">15</text>
+    <text x="128" y="327">10</text>
+    <text x="128" y="376">5</text>
+    <text x="128" y="425">0</text>
+  </g>
+  <text x="66" y="250" font-size="13" fill="#6B7280" transform="rotate(-90 66 250)" text-anchor="middle">frames per second</text>
+  <line x1="140" y1="420" x2="1120" y2="420" stroke="#374151" stroke-width="2"/>
+
+  <!-- threshold -->
+  <line x1="140" y1="274.3" x2="1120" y2="274.3" stroke="#B91C1C" stroke-width="1.8" stroke-dasharray="8 5"/>
+  <text x="1114" y="267" font-size="12.5" fill="#B91C1C" text-anchor="end">15 FPS — the point where a live view stops feeling like a slideshow</text>
+
+  <!-- bars -->
+  <rect x="185" y="332.6" width="150" height="87.4" fill="#BFD3EA" stroke="#2F5D8E" stroke-width="1.8"/>
+  <text x="260" y="322" font-size="18" font-weight="bold" text-anchor="middle" fill="#1B3B5C">9</text>
+
+  <rect x="425" y="177.1" width="150" height="242.9" fill="#2F5D8E" stroke="#1B3B5C" stroke-width="1.8"/>
+  <text x="500" y="167" font-size="18" font-weight="bold" text-anchor="middle" fill="#1B3B5C">25</text>
+
+  <rect x="665" y="371.4" width="150" height="48.6" fill="url(#hatch)" stroke="#9CA3AF" stroke-width="1.8"/>
+  <text x="740" y="361" font-size="18" font-weight="bold" text-anchor="middle" fill="#6B7280">5</text>
+
+  <rect x="905" y="128.6" width="150" height="291.4" fill="url(#hatch)" stroke="#2F7D4F" stroke-width="1.8"/>
+  <text x="980" y="118" font-size="18" font-weight="bold" text-anchor="middle" fill="#1B4D31">30</text>
+
+  <!-- x labels -->
+  <g text-anchor="middle">
+    <text x="260" y="446" font-size="14" font-weight="bold" fill="#1F2937">Laptop, PyTorch</text>
+    <text x="260" y="466" font-size="12.5" fill="#6B7280">phase 1</text>
+    <text x="260" y="484" font-size="12.5" fill="#9CA3AF">~110 ms / frame</text>
+
+    <text x="500" y="446" font-size="14" font-weight="bold" fill="#1F2937">Laptop, OpenVINO</text>
+    <text x="500" y="466" font-size="12.5" fill="#6B7280">phase 2</text>
+    <text x="500" y="484" font-size="12.5" fill="#9CA3AF">~39 ms / frame</text>
+
+    <text x="740" y="446" font-size="14" font-weight="bold" fill="#1F2937">Pi 5, NCNN</text>
+    <text x="740" y="466" font-size="12.5" fill="#6B7280">phase 5, CPU only</text>
+    <text x="740" y="484" font-size="12.5" fill="#9CA3AF">~200 ms / frame</text>
+
+    <text x="980" y="446" font-size="14" font-weight="bold" fill="#1F2937">Pi 5 + Hailo-8L</text>
+    <text x="980" y="466" font-size="12.5" fill="#6B7280">phase 5, accelerator</text>
+    <text x="980" y="484" font-size="12.5" fill="#9CA3AF">~30 ms / frame</text>
+  </g>
+
+  <!-- legend -->
+  <rect x="140" y="504" width="22" height="16" fill="#2F5D8E" stroke="#1B3B5C" stroke-width="1.4"/>
+  <text x="172" y="517" font-size="12.5" fill="#4B5563">derived from published Ultralytics ONNX benchmarks</text>
+  <rect x="560" y="504" width="22" height="16" fill="url(#hatch)" stroke="#9CA3AF" stroke-width="1.4"/>
+  <text x="592" y="517" font-size="12.5" fill="#4B5563">estimate — to be replaced by real numbers from bench.py</text>
+</svg>

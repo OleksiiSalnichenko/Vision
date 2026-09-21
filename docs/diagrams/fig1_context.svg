@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620" font-family="Arial, Helvetica, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#4B5563"/>
+    </marker>
+    <marker id="ad" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#B9762F"/>
+    </marker>
+  </defs>
+  <rect width="1200" height="620" fill="#FFFFFF"/>
+
+  <!-- network-only zone -->
+  <rect x="300" y="26" width="620" height="84" rx="6" fill="#FCF1E4" stroke="#B9762F" stroke-width="1.5" stroke-dasharray="7 4"/>
+  <text x="330" y="56" font-size="15" font-weight="bold" fill="#8A5620">NETWORK — used twice in the entire project</text>
+  <text x="330" y="80" font-size="14" fill="#8A5620">Ultralytics weight release (once, via scripts/fetch_models.py)</text>
+  <text x="330" y="99" font-size="14" fill="#8A5620">Kaggle GPU notebooks (phase 4 training only)</text>
+
+  <path d="M 470 110 L 470 168" stroke="#B9762F" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#ad)"/>
+  <text x="482" y="146" font-size="12.5" fill="#8A5620">yolo26n.pt</text>
+
+  <!-- offline boundary -->
+  <rect x="30" y="170" width="1140" height="420" rx="8" fill="#FBFCFD" stroke="#B91C1C" stroke-width="1.8" stroke-dasharray="9 5"/>
+  <text x="46" y="195" font-size="15" font-weight="bold" fill="#B91C1C">OFFLINE BOUNDARY — no network calls at runtime, ever</text>
+
+  <!-- inputs -->
+  <text x="70" y="232" font-size="14" font-weight="bold" fill="#374151">INPUTS</text>
+  <rect x="62" y="244" width="196" height="62" rx="5" fill="#F3F4F6" stroke="#9CA3AF" stroke-width="1.4"/>
+  <text x="160" y="270" font-size="14.5" text-anchor="middle" fill="#1F2937">Still images</text>
+  <text x="160" y="291" font-size="12.5" text-anchor="middle" fill="#6B7280">data/test_images/  — phase 1</text>
+
+  <rect x="62" y="322" width="196" height="62" rx="5" fill="#F3F4F6" stroke="#9CA3AF" stroke-width="1.4"/>
+  <text x="160" y="348" font-size="14.5" text-anchor="middle" fill="#1F2937">Webcam</text>
+  <text x="160" y="369" font-size="12.5" text-anchor="middle" fill="#6B7280">HP Wide Vision FHD — phase 2</text>
+
+  <rect x="62" y="400" width="196" height="62" rx="5" fill="#F9FAFB" stroke="#C7CBD1" stroke-width="1.3" stroke-dasharray="5 3"/>
+  <text x="160" y="426" font-size="14.5" text-anchor="middle" fill="#6B7280">Video file / RTSP</text>
+  <text x="160" y="447" font-size="12.5" text-anchor="middle" fill="#9CA3AF">phase 2</text>
+
+  <!-- application -->
+  <rect x="340" y="244" width="300" height="262" rx="7" fill="#E7EEF8" stroke="#2F5D8E" stroke-width="2"/>
+  <text x="490" y="274" font-size="17" font-weight="bold" text-anchor="middle" fill="#1B3B5C">Vision Application</text>
+  <text x="490" y="295" font-size="12.5" text-anchor="middle" fill="#3D6EA0">detect.py + core/</text>
+  <line x1="360" y1="308" x2="620" y2="308" stroke="#9FB8D4" stroke-width="1.2"/>
+  <rect x="362" y="320" width="256" height="34" rx="4" fill="#FFFFFF" stroke="#9FB8D4" stroke-width="1.2"/>
+  <text x="490" y="342" font-size="13.5" text-anchor="middle" fill="#1F2937">Source — frames from anything</text>
+  <rect x="362" y="362" width="256" height="34" rx="4" fill="#FFFFFF" stroke="#9FB8D4" stroke-width="1.2"/>
+  <text x="490" y="384" font-size="13.5" text-anchor="middle" fill="#1F2937">Detector — YOLO26n, local weights</text>
+  <rect x="362" y="404" width="256" height="34" rx="4" fill="#FFFFFF" stroke="#9FB8D4" stroke-width="1.2"/>
+  <text x="490" y="426" font-size="13.5" text-anchor="middle" fill="#1F2937">Geometry — centre, dx / dy</text>
+  <rect x="362" y="446" width="256" height="34" rx="4" fill="#FFFFFF" stroke="#9FB8D4" stroke-width="1.2"/>
+  <text x="490" y="468" font-size="13.5" text-anchor="middle" fill="#1F2937">Attributes — colour (opt-in)</text>
+
+  <!-- local weights store -->
+  <rect x="340" y="524" width="300" height="46" rx="5" fill="#FCF1E4" stroke="#B9762F" stroke-width="1.4"/>
+  <text x="490" y="553" font-size="13.5" text-anchor="middle" fill="#8A5620">models/  —  yolo26n.pt, yolo26s.pt, checksums</text>
+  <path d="M 490 524 L 490 508" stroke="#B9762F" stroke-width="1.6" marker-end="url(#ad)"/>
+
+  <!-- outputs -->
+  <text x="720" y="232" font-size="14" font-weight="bold" fill="#374151">OUTPUTS</text>
+  <rect x="712" y="244" width="240" height="46" rx="5" fill="#E8F4EC" stroke="#2F7D4F" stroke-width="1.4"/>
+  <text x="832" y="272" font-size="14" text-anchor="middle" fill="#1B4D31">OpenCV window with overlay</text>
+  <rect x="712" y="302" width="240" height="46" rx="5" fill="#E8F4EC" stroke="#2F7D4F" stroke-width="1.4"/>
+  <text x="832" y="330" font-size="14" text-anchor="middle" fill="#1B4D31">out/&lt;name&gt;_annotated.jpg</text>
+  <rect x="712" y="360" width="240" height="46" rx="5" fill="#E8F4EC" stroke="#2F7D4F" stroke-width="1.4"/>
+  <text x="832" y="388" font-size="14" text-anchor="middle" fill="#1B4D31">out/&lt;name&gt;.json</text>
+  <rect x="712" y="418" width="240" height="46" rx="5" fill="#E8F4EC" stroke="#2F7D4F" stroke-width="1.4"/>
+  <text x="832" y="446" font-size="14" text-anchor="middle" fill="#1B4D31">Console lines</text>
+  <rect x="712" y="476" width="240" height="46" rx="5" fill="#E7EEF8" stroke="#2F5D8E" stroke-width="1.6"/>
+  <text x="832" y="497" font-size="14" text-anchor="middle" fill="#1B3B5C">User callback(Detection)</text>
+  <text x="832" y="514" font-size="12" text-anchor="middle" fill="#3D6EA0">the extension point</text>
+
+  <!-- arrows in -->
+  <path d="M 258 275 L 336 320" stroke="#4B5563" stroke-width="1.6" marker-end="url(#a)" fill="none"/>
+  <path d="M 258 353 L 336 345" stroke="#4B5563" stroke-width="1.6" marker-end="url(#a)" fill="none"/>
+  <path d="M 258 431 L 336 372" stroke="#C7CBD1" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#a)" fill="none"/>
+
+  <!-- arrows out -->
+  <path d="M 644 300 L 708 267" stroke="#4B5563" stroke-width="1.6" marker-end="url(#a)" fill="none"/>
+  <path d="M 644 330 L 708 325" stroke="#4B5563" stroke-width="1.6" marker-end="url(#a)" fill="none"/>
+  <path d="M 644 360 L 708 383" stroke="#4B5563" stroke-width="1.6" marker-end="url(#a)" fill="none"/>
+  <path d="M 644 390 L 708 441" stroke="#4B5563" stroke-width="1.6" marker-end="url(#a)" fill="none"/>
+  <path d="M 644 420 L 708 499" stroke="#4B5563" stroke-width="1.6" marker-end="url(#a)" fill="none"/>
+
+  <!-- actor -->
+  <circle cx="1060" cy="372" r="15" fill="#FFFFFF" stroke="#374151" stroke-width="1.8"/>
+  <path d="M 1060 387 L 1060 424 M 1042 400 L 1078 400 M 1060 424 L 1045 450 M 1060 424 L 1075 450" stroke="#374151" stroke-width="1.8" fill="none"/>
+  <text x="1060" y="472" font-size="14" text-anchor="middle" fill="#374151">Operator</text>
+  <path d="M 1040 372 L 958 372" stroke="#4B5563" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#a)" fill="none"/>
+  <text x="999" y="364" font-size="11.5" text-anchor="middle" fill="#6B7280">reads</text>
+</svg>

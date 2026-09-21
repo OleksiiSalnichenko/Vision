@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="660" viewBox="0 0 1200 660" font-family="Arial, Helvetica, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#4B5563"/>
+    </marker>
+    <marker id="ad" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#B9762F"/>
+    </marker>
+  </defs>
+  <rect width="1200" height="660" fill="#FFFFFF"/>
+
+  <!-- source of truth -->
+  <rect x="400" y="30" width="400" height="70" rx="6" fill="#FFF8E7" stroke="#B08900" stroke-width="2"/>
+  <text x="600" y="58" font-size="16.5" font-weight="bold" text-anchor="middle" fill="#7A5E00">models/yolo26n.pt</text>
+  <text x="600" y="82" font-size="13" text-anchor="middle" fill="#7A5E00">one set of weights, 6 MB, shared by every target</text>
+
+  <path d="M 470 100 L 300 152" stroke="#4B5563" stroke-width="1.8" marker-end="url(#a)" fill="none"/>
+  <text x="330" y="126" font-size="12.5" fill="#6B7280">export</text>
+  <path d="M 730 100 L 900 152" stroke="#4B5563" stroke-width="1.8" marker-end="url(#a)" fill="none"/>
+  <text x="838" y="126" font-size="12.5" fill="#6B7280">export</text>
+
+  <!-- laptop -->
+  <rect x="50" y="156" width="510" height="286" rx="8" fill="#F4F8FD" stroke="#2F5D8E" stroke-width="2"/>
+  <text x="72" y="184" font-size="15.5" font-weight="bold" fill="#1B3B5C">Development laptop  —  Windows 11</text>
+  <text x="72" y="206" font-size="12.5" fill="#3D6EA0">Intel i7-8550U, 4 cores, 15.8 GB RAM, Intel UHD 620, no CUDA</text>
+
+  <rect x="72" y="222" width="466" height="74" rx="5" fill="#FFFFFF" stroke="#2F5D8E" stroke-width="1.5"/>
+  <text x="90" y="246" font-size="14.5" font-weight="bold" fill="#1F2937">PyTorch  .pt</text>
+  <text x="90" y="267" font-size="12.5" fill="#6B7280">phase 1 — simplest path, no conversion step</text>
+  <text x="90" y="286" font-size="12.5" fill="#6B7280">approx. 110 ms per frame</text>
+  <rect x="438" y="240" width="84" height="40" rx="4" fill="#F3F4F6" stroke="#9CA3AF" stroke-width="1.2"/>
+  <text x="480" y="266" font-size="16" font-weight="bold" text-anchor="middle" fill="#374151">~9 FPS</text>
+
+  <rect x="72" y="306" width="466" height="74" rx="5" fill="#FFFFFF" stroke="#2F7D4F" stroke-width="1.8"/>
+  <text x="90" y="330" font-size="14.5" font-weight="bold" fill="#1F2937">OpenVINO  .xml + .bin</text>
+  <text x="90" y="351" font-size="12.5" fill="#6B7280">phase 2 — Intel's own runtime, 2-3x faster on this CPU</text>
+  <text x="90" y="370" font-size="12.5" fill="#6B7280">approx. 39 ms per frame</text>
+  <rect x="438" y="324" width="84" height="40" rx="4" fill="#E8F4EC" stroke="#2F7D4F" stroke-width="1.3"/>
+  <text x="480" y="350" font-size="16" font-weight="bold" text-anchor="middle" fill="#1B4D31">~25 FPS</text>
+
+  <text x="72" y="410" font-size="12.5" fill="#9CA3AF">model.export(format="openvino")  —  one line, no code changes elsewhere</text>
+  <text x="72" y="430" font-size="12.5" fill="#9CA3AF">Camera: HP Wide Vision FHD, captured at 1280 x 720</text>
+
+  <!-- pi -->
+  <rect x="640" y="156" width="510" height="286" rx="8" fill="#FCF7F2" stroke="#B9762F" stroke-width="2"/>
+  <text x="662" y="184" font-size="15.5" font-weight="bold" fill="#8A5620">Raspberry Pi 5  —  target, not yet purchased</text>
+  <text x="662" y="206" font-size="12.5" fill="#B9762F">Model and accelerator still to be confirmed by the user</text>
+
+  <rect x="662" y="222" width="466" height="74" rx="5" fill="#FFFFFF" stroke="#B9762F" stroke-width="1.5"/>
+  <text x="680" y="246" font-size="14.5" font-weight="bold" fill="#1F2937">NCNN  —  CPU only</text>
+  <text x="680" y="267" font-size="12.5" fill="#6B7280">workable, but this is the floor of what is usable</text>
+  <text x="680" y="286" font-size="12.5" fill="#6B7280">approx. 200 ms per frame (estimate)</text>
+  <rect x="1028" y="240" width="84" height="40" rx="4" fill="#F3F4F6" stroke="#9CA3AF" stroke-width="1.2"/>
+  <text x="1070" y="266" font-size="16" font-weight="bold" text-anchor="middle" fill="#374151">~5 FPS</text>
+
+  <rect x="662" y="306" width="466" height="74" rx="5" fill="#FFFFFF" stroke="#2F7D4F" stroke-width="1.8"/>
+  <text x="680" y="330" font-size="14.5" font-weight="bold" fill="#1F2937">Hailo-8L AI HAT  —  approx. USD 70</text>
+  <text x="680" y="351" font-size="12.5" fill="#6B7280">dedicated inference accelerator on the PCIe header</text>
+  <text x="680" y="370" font-size="12.5" fill="#6B7280">approx. 30 ms per frame (estimate)</text>
+  <rect x="1028" y="324" width="84" height="40" rx="4" fill="#E8F4EC" stroke="#2F7D4F" stroke-width="1.3"/>
+  <text x="1070" y="350" font-size="16" font-weight="bold" text-anchor="middle" fill="#1B4D31">~30 FPS</text>
+
+  <text x="662" y="410" font-size="12.5" fill="#9CA3AF">Usually headless, so the FastAPI web UI over the LAN replaces the Qt window.</text>
+  <text x="662" y="430" font-size="12.5" fill="#9CA3AF">Same core/ code. Only the export format and the UI layer differ.</text>
+
+  <!-- training -->
+  <rect x="300" y="500" width="600" height="120" rx="7" fill="#FCF1E4" stroke="#B9762F" stroke-width="1.8" stroke-dasharray="8 4"/>
+  <text x="600" y="530" font-size="15.5" font-weight="bold" text-anchor="middle" fill="#8A5620">Kaggle GPU notebook  —  phase 4 only, the one time the cloud is used</text>
+  <text x="600" y="556" font-size="13" text-anchor="middle" fill="#8A5620">Upload the annotated dataset, fine-tune yolo26n, download best.pt.</text>
+  <text x="600" y="578" font-size="13" text-anchor="middle" fill="#8A5620">Free P100, 30 GPU-hours per week, private datasets.</text>
+  <text x="600" y="602" font-size="13" text-anchor="middle" fill="#8A5620">Without CUDA the same job would take 6-10 hours on the laptop CPU.</text>
+
+  <path d="M 600 496 L 600 106" stroke="#B9762F" stroke-width="1.8" stroke-dasharray="8 4" marker-end="url(#ad)" fill="none"/>
+  <rect x="510" y="278" width="180" height="46" rx="5" fill="#FFFFFF" stroke="#B9762F" stroke-width="1.5"/>
+  <text x="600" y="299" font-size="13" text-anchor="middle" fill="#8A5620">yolo26n_custom.pt</text>
+  <text x="600" y="316" font-size="11.5" text-anchor="middle" fill="#B9762F">replaces the stock weights</text>
+</svg>

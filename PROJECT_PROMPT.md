@@ -1,0 +1,139 @@
+# Vision — Session Start Prompt
+
+Paste everything below the line into a fresh Claude Code session opened in
+`D:\Projects\Vision`. It is self-contained: it assumes no memory of the design
+conversation that produced it.
+
+---
+
+## Context
+
+I am building a local, offline object detection application in
+`D:\Projects\Vision`. The full design is already agreed and written up in
+`ARCHITECTURE.md` in this directory — **read that file first**. This prompt is
+the short version plus the decisions that are easy to get wrong.
+
+Nothing is implemented yet. The repository is empty apart from the design docs.
+
+### What it does
+
+A camera (or a still image) goes in. For every detected object the app reports
+its class, a bounding box, and how far the object's centre sits from the centre
+of the frame (dx / dy, in pixels and as a fraction of the half-frame). A
+crosshair marks the frame centre, a dot marks each object's centre, and a line
+joins them.
+
+Phase 1 works on still images only. Video, tracking and a GUI come later.
+
+### Hard requirements
+
+- **Fully offline at runtime.** The network is used exactly twice in the whole
+  project: `pip install`, and a one-time weight download. Never at inference
+  time. This is the requirement most likely to be broken by accident — see the
+  Ultralytics warning below.
+- **Must eventually run on a Raspberry Pi.** The Pi sets the performance budget,
+  not the laptop.
+- Personal learning project, not commercial. AGPL-3.0 is fine.
+- Custom classes (a pen, flowers) are needed later, so the pipeline must support
+  fine-tuning without being restructured.
+
+### Hardware (already measured, do not re-check)
+
+Intel Core i7-8550U, 4 cores, 15.8 GB RAM, Intel UHD Graphics 620, Windows 11.
+**No NVIDIA GPU, so no CUDA.** Built-in camera: HP Wide Vision FHD.
+The machine currently has Python 3.7.3, which is too old — leave it alone and
+install 3.11 alongside it.
+
+## Settled decisions
+
+Do not reopen these. They were each argued through.
+
+| Decision | Value |
+|---|---|
+| Language | Python 3.11, fresh venv inside the project |
+| Detector | **Ultralytics YOLO26n**, one model for every phase |
+| Fallback weights | `yolo26s.pt`, downloaded but unused, kept for offline availability |
+| Confidence | display/events at 0.5; JSON also records everything down to 0.25 |
+| Input size | `imgsz: 640` (the model's native training size) |
+| Classes | whitelist in `config.yaml`, not all 80 COCO classes |
+| Phase 1 input | still images only |
+| Phase 1 output | OpenCV window + console lines + annotated JPG + JSON |
+| Colour attribute | in phase 1, but behind a `--color` flag, in its own module |
+| GUI | PySide6, phase 3, not before |
+| Training | Kaggle notebooks, free GPU |
+| Annotation | Label Studio, local |
+| Code, comments, logs, README, UI strings | **all English** |
+
+### Deliberately out of scope
+
+Face recognition. Instance segmentation (boxes only). Handwriting OCR. C++.
+Servo hardware — but `core/aim.py` exists as a stub taking `aim(dx, dy)`, so
+adding real pan-tilt servos later touches one file. `rules.yaml` is deferred to
+phase 2.
+
+### Things that are easy to get wrong
+
+1. **Ultralytics silently downloads weights.** Given a bare name like
+   `yolo26n.pt` it fetches from GitHub. On an offline Pi that becomes a baffling
+   crash. So: `config.yaml` stores an explicit path (`models/yolo26n.pt`), and
+   `Detector.__init__` must raise
+   `FileNotFoundError: run scripts/fetch_models.py first` when the file is
+   missing. It must never fall back to the network.
+2. **`n`/`s`/`m` are sizes of one model, not different models.** Switching is one
+   config line. Do not build abstraction around "model selection".
+3. **YOLO26 is NMS-free.** There is no non-maximum-suppression post-processing
+   step. Do not add one; do not port NMS code from YOLO11 examples.
+4. **`core/` must not import from `ui/`** or know how it was launched. This is
+   what makes phases 2, 3 and 5 additive instead of rewrites.
+5. **Do not skip `conf_debug`.** Recording near-miss detections between 0.25 and
+   0.5 in the JSON is the main debugging tool for a missed object.
+
+## What I want you to build now
+
+Phase 0, 0.5 and 1, in that order, stopping after each for me to check.
+
+**Phase 0 — environment.** Install Python 3.11 (alongside 3.7, not on PATH),
+`git init`, `.gitignore` covering `venv/`, `models/*.pt`, `out/`, `data/`, a venv
+in the project, and `ultralytics opencv-python pyyaml numpy scikit-learn`.
+Done when `python -c "import torch, cv2, ultralytics"` succeeds.
+
+**Phase 0.5 — weights.** `scripts/fetch_models.py`: download `yolo26n.pt` and
+`yolo26s.pt` into `models\`, write SHA256 sums to `models\checksums.txt`, print
+a summary.
+
+**Phase 1 — still image detection.** The structure, module contracts, data flow
+and config schema are specified in sections 6 to 9 of `ARCHITECTURE.md`. Follow
+them. Roughly 700 lines across:
+
+```
+detect.py  bench.py  scripts/{fetch_models,grab}.py
+core/{types,config,source,detector,geometry,attributes,draw,events,output,aim}.py
+```
+
+Entry point:
+
+```bash
+python detect.py --source data/test_images/bus.jpg
+```
+
+Then verify in this order: a stock Ultralytics sample image (proves the install),
+then my own photos (proves the idea), then the flags, then `scripts/grab.py` for
+real frames from my actual webcam.
+
+## How I want you to work
+
+- Ask before installing anything system-wide.
+- Stop after each phase and show me what to run.
+- I am new to computer vision. When you make a technical choice, say in one line
+  why — but do not turn the session into a lecture.
+- If something in `ARCHITECTURE.md` turns out to be wrong once code exists, say
+  so and propose the change rather than quietly working around it.
+
+## Open questions, still unanswered
+
+- Which Raspberry Pi model, and whether a Hailo AI HAT is in budget. Affects
+  phase 5 only. I will confirm later.
+- Whether `yolo26n` is accurate enough for a pen. Unknown until I test on my own
+  photos. The fallback path is `yolo26s`, or `imgsz: 960`, or shooting closer.
+- Whether the dominant-colour feature is actually useful. It stays behind a flag
+  until I have seen it on my own photos.

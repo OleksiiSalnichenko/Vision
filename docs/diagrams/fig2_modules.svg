@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="700" viewBox="0 0 1200 700" font-family="Arial, Helvetica, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#4B5563"/>
+    </marker>
+  </defs>
+  <rect width="1200" height="700" fill="#FFFFFF"/>
+
+  <!-- layer 3: entry points -->
+  <rect x="40" y="30" width="1120" height="104" rx="7" fill="#F9FAFB" stroke="#D1D5DB" stroke-width="1.4"/>
+  <text x="58" y="54" font-size="13.5" font-weight="bold" fill="#6B7280">ENTRY POINTS — know how the program was launched</text>
+  <rect x="62" y="66" width="160" height="50" rx="5" fill="#E7EEF8" stroke="#2F5D8E" stroke-width="1.6"/>
+  <text x="142" y="96" font-size="14.5" text-anchor="middle" fill="#1B3B5C">detect.py</text>
+  <rect x="238" y="66" width="160" height="50" rx="5" fill="#E7EEF8" stroke="#2F5D8E" stroke-width="1.6"/>
+  <text x="318" y="96" font-size="14.5" text-anchor="middle" fill="#1B3B5C">bench.py</text>
+  <rect x="414" y="66" width="190" height="50" rx="5" fill="#E7EEF8" stroke="#2F5D8E" stroke-width="1.6"/>
+  <text x="509" y="96" font-size="14.5" text-anchor="middle" fill="#1B3B5C">scripts/grab.py</text>
+  <rect x="620" y="66" width="220" height="50" rx="5" fill="#FCF1E4" stroke="#B9762F" stroke-width="1.6"/>
+  <text x="730" y="89" font-size="14.5" text-anchor="middle" fill="#8A5620">scripts/fetch_models.py</text>
+  <text x="730" y="106" font-size="11.5" text-anchor="middle" fill="#B9762F">the only networked file</text>
+  <rect x="856" y="66" width="286" height="50" rx="5" fill="#F9FAFB" stroke="#C7CBD1" stroke-width="1.4" stroke-dasharray="5 3"/>
+  <text x="999" y="89" font-size="14.5" text-anchor="middle" fill="#6B7280">ui/  —  PySide6</text>
+  <text x="999" y="106" font-size="11.5" text-anchor="middle" fill="#9CA3AF">phase 3, does not exist yet</text>
+
+  <!-- layer 2: core -->
+  <rect x="40" y="184" width="1120" height="330" rx="7" fill="#F4F8FD" stroke="#2F5D8E" stroke-width="1.8"/>
+  <text x="58" y="208" font-size="13.5" font-weight="bold" fill="#2F5D8E">core/  —  pure library. Never imports an entry point. Never knows how it was launched.</text>
+
+  <rect x="62" y="224" width="200" height="56" rx="5" fill="#FFFFFF" stroke="#2F5D8E" stroke-width="1.5"/>
+  <text x="162" y="247" font-size="14.5" text-anchor="middle" fill="#1F2937">config.py</text>
+  <text x="162" y="266" font-size="11.5" text-anchor="middle" fill="#6B7280">loads config.yaml</text>
+
+  <rect x="286" y="224" width="200" height="56" rx="5" fill="#FFFFFF" stroke="#2F5D8E" stroke-width="1.5"/>
+  <text x="386" y="247" font-size="14.5" text-anchor="middle" fill="#1F2937">source.py</text>
+  <text x="386" y="266" font-size="11.5" text-anchor="middle" fill="#6B7280">yields Frame</text>
+
+  <rect x="510" y="224" width="200" height="56" rx="5" fill="#FFFFFF" stroke="#2F5D8E" stroke-width="1.5"/>
+  <text x="610" y="247" font-size="14.5" text-anchor="middle" fill="#1F2937">detector.py</text>
+  <text x="610" y="266" font-size="11.5" text-anchor="middle" fill="#6B7280">Frame to Detection[]</text>
+
+  <rect x="734" y="224" width="200" height="56" rx="5" fill="#FFFFFF" stroke="#2F5D8E" stroke-width="1.5"/>
+  <text x="834" y="247" font-size="14.5" text-anchor="middle" fill="#1F2937">geometry.py</text>
+  <text x="834" y="266" font-size="11.5" text-anchor="middle" fill="#6B7280">centres, dx / dy</text>
+
+  <rect x="958" y="224" width="184" height="56" rx="5" fill="#FFFFFF" stroke="#2F5D8E" stroke-width="1.5"/>
+  <text x="1050" y="247" font-size="14.5" text-anchor="middle" fill="#1F2937">attributes.py</text>
+  <text x="1050" y="266" font-size="11.5" text-anchor="middle" fill="#6B7280">dominant colour</text>
+
+  <rect x="62" y="306" width="200" height="56" rx="5" fill="#FFFFFF" stroke="#2F5D8E" stroke-width="1.5"/>
+  <text x="162" y="329" font-size="14.5" text-anchor="middle" fill="#1F2937">draw.py</text>
+  <text x="162" y="348" font-size="11.5" text-anchor="middle" fill="#6B7280">overlay rendering</text>
+
+  <rect x="286" y="306" width="200" height="56" rx="5" fill="#FFFFFF" stroke="#2F5D8E" stroke-width="1.5"/>
+  <text x="386" y="329" font-size="14.5" text-anchor="middle" fill="#1F2937">output.py</text>
+  <text x="386" y="348" font-size="11.5" text-anchor="middle" fill="#6B7280">JSON, JPG, console</text>
+
+  <rect x="510" y="306" width="200" height="56" rx="5" fill="#FFFFFF" stroke="#2F5D8E" stroke-width="1.5"/>
+  <text x="610" y="329" font-size="14.5" text-anchor="middle" fill="#1F2937">events.py</text>
+  <text x="610" y="348" font-size="11.5" text-anchor="middle" fill="#6B7280">on_detect bus</text>
+
+  <rect x="734" y="306" width="200" height="56" rx="5" fill="#FFFFFF" stroke="#9CA3AF" stroke-width="1.5" stroke-dasharray="5 3"/>
+  <text x="834" y="329" font-size="14.5" text-anchor="middle" fill="#6B7280">aim.py</text>
+  <text x="834" y="348" font-size="11.5" text-anchor="middle" fill="#9CA3AF">servo stub</text>
+
+  <rect x="958" y="306" width="184" height="56" rx="5" fill="#F9FAFB" stroke="#C7CBD1" stroke-width="1.4" stroke-dasharray="5 3"/>
+  <text x="1050" y="329" font-size="14.5" text-anchor="middle" fill="#6B7280">tracker.py</text>
+  <text x="1050" y="348" font-size="11.5" text-anchor="middle" fill="#9CA3AF">phase 2</text>
+
+  <!-- types -->
+  <rect x="286" y="398" width="648" height="86" rx="6" fill="#FFF8E7" stroke="#B08900" stroke-width="1.8"/>
+  <text x="610" y="424" font-size="15" font-weight="bold" text-anchor="middle" fill="#7A5E00">core/types.py  —  Detection, Frame</text>
+  <text x="610" y="447" font-size="13" text-anchor="middle" fill="#7A5E00">The only types that cross a module boundary.</text>
+  <text x="610" y="468" font-size="13" text-anchor="middle" fill="#7A5E00">Every consumer reads Detection and nothing else.</text>
+
+  <!-- layer 1: third party -->
+  <rect x="40" y="556" width="1120" height="110" rx="7" fill="#F9FAFB" stroke="#D1D5DB" stroke-width="1.4"/>
+  <text x="58" y="580" font-size="13.5" font-weight="bold" fill="#6B7280">THIRD PARTY</text>
+  <rect x="62" y="594" width="250" height="52" rx="5" fill="#F3F4F6" stroke="#9CA3AF" stroke-width="1.4"/>
+  <text x="187" y="617" font-size="14" text-anchor="middle" fill="#374151">ultralytics</text>
+  <text x="187" y="635" font-size="11.5" text-anchor="middle" fill="#6B7280">YOLO26, export, training</text>
+  <rect x="330" y="594" width="250" height="52" rx="5" fill="#F3F4F6" stroke="#9CA3AF" stroke-width="1.4"/>
+  <text x="455" y="617" font-size="14" text-anchor="middle" fill="#374151">opencv-python</text>
+  <text x="455" y="635" font-size="11.5" text-anchor="middle" fill="#6B7280">I/O, drawing, capture</text>
+  <rect x="598" y="594" width="250" height="52" rx="5" fill="#F3F4F6" stroke="#9CA3AF" stroke-width="1.4"/>
+  <text x="723" y="617" font-size="14" text-anchor="middle" fill="#374151">numpy</text>
+  <text x="723" y="635" font-size="11.5" text-anchor="middle" fill="#6B7280">arrays</text>
+  <rect x="866" y="594" width="276" height="52" rx="5" fill="#F3F4F6" stroke="#9CA3AF" stroke-width="1.4"/>
+  <text x="1004" y="617" font-size="14" text-anchor="middle" fill="#374151">scikit-learn, pyyaml</text>
+  <text x="1004" y="635" font-size="11.5" text-anchor="middle" fill="#6B7280">k-means colour, config</text>
+
+  <!-- dependency arrows -->
+  <path d="M 142 134 L 142 220" stroke="#4B5563" stroke-width="1.6" marker-end="url(#a)" fill="none"/>
+  <path d="M 318 134 L 330 220" stroke="#4B5563" stroke-width="1.6" marker-end="url(#a)" fill="none"/>
+  <path d="M 509 134 L 420 220" stroke="#4B5563" stroke-width="1.6" marker-end="url(#a)" fill="none"/>
+  <path d="M 999 134 L 950 220" stroke="#C7CBD1" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#a)" fill="none"/>
+  <path d="M 610 514 L 610 552" stroke="#4B5563" stroke-width="1.6" marker-end="url(#a)" fill="none"/>
+
+  <text x="600" y="686" font-size="13" text-anchor="middle" fill="#B91C1C">Arrows point downward only. An upward arrow would break phases 2, 3 and 5.</text>
+</svg>

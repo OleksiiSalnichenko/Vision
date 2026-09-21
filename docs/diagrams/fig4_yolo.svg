@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620" font-family="Arial, Helvetica, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#4B5563"/>
+    </marker>
+  </defs>
+  <rect width="1200" height="620" fill="#FFFFFF"/>
+
+  <!-- 1 preprocess -->
+  <text x="40" y="40" font-size="13.5" font-weight="bold" fill="#6B7280">1 — PREPROCESS</text>
+  <rect x="40" y="56" width="150" height="150" rx="4" fill="#F3F4F6" stroke="#9CA3AF" stroke-width="1.5"/>
+  <rect x="40" y="86" width="150" height="90" fill="#DCE6F2" stroke="none"/>
+  <text x="115" y="136" font-size="13" text-anchor="middle" fill="#1F2937">source image</text>
+  <text x="115" y="226" font-size="12.5" text-anchor="middle" fill="#6B7280">letterboxed to 640 x 640</text>
+  <text x="115" y="245" font-size="12.5" text-anchor="middle" fill="#6B7280">pixels scaled to 0..1</text>
+  <text x="115" y="266" font-size="12.5" text-anchor="middle" fill="#3D6EA0">tensor [1, 3, 640, 640]</text>
+  <path d="M 196 130 L 236 130" stroke="#4B5563" stroke-width="1.8" marker-end="url(#a)"/>
+
+  <!-- 2 backbone -->
+  <text x="244" y="40" font-size="13.5" font-weight="bold" fill="#6B7280">2 — BACKBONE  (feature hierarchy, resolution shrinks)</text>
+  <rect x="244" y="56" width="90" height="150" rx="4" fill="#E7EEF8" stroke="#2F5D8E" stroke-width="1.5"/>
+  <text x="289" y="136" font-size="12.5" text-anchor="middle" fill="#1B3B5C">320</text>
+  <rect x="344" y="76" width="80" height="110" rx="4" fill="#E7EEF8" stroke="#2F5D8E" stroke-width="1.5"/>
+  <text x="384" y="136" font-size="12.5" text-anchor="middle" fill="#1B3B5C">160</text>
+  <rect x="434" y="91" width="70" height="80" rx="4" fill="#DCE6F2" stroke="#2F5D8E" stroke-width="1.6"/>
+  <text x="469" y="136" font-size="12.5" text-anchor="middle" fill="#1B3B5C">80</text>
+  <rect x="514" y="103" width="60" height="56" rx="4" fill="#DCE6F2" stroke="#2F5D8E" stroke-width="1.6"/>
+  <text x="544" y="136" font-size="12.5" text-anchor="middle" fill="#1B3B5C">40</text>
+  <rect x="584" y="112" width="50" height="38" rx="4" fill="#DCE6F2" stroke="#2F5D8E" stroke-width="1.6"/>
+  <text x="609" y="136" font-size="12.5" text-anchor="middle" fill="#1B3B5C">20</text>
+
+  <text x="244" y="228" font-size="12.5" fill="#6B7280">edges, gradients</text>
+  <text x="370" y="228" font-size="12.5" fill="#6B7280">textures</text>
+  <text x="446" y="228" font-size="12.5" fill="#6B7280">parts</text>
+  <text x="520" y="228" font-size="12.5" fill="#6B7280">objects</text>
+  <text x="244" y="252" font-size="12.5" fill="#9CA3AF">Nobody programmed this hierarchy. Training produced it, because it minimises the loss.</text>
+
+  <path d="M 640 130 L 678 130" stroke="#4B5563" stroke-width="1.8" marker-end="url(#a)"/>
+
+  <!-- 3 neck -->
+  <text x="686" y="40" font-size="13.5" font-weight="bold" fill="#6B7280">3 — NECK</text>
+  <rect x="686" y="56" width="130" height="150" rx="5" fill="#FFF8E7" stroke="#B08900" stroke-width="1.7"/>
+  <text x="751" y="120" font-size="13.5" text-anchor="middle" fill="#7A5E00">multi-scale</text>
+  <text x="751" y="140" font-size="13.5" text-anchor="middle" fill="#7A5E00">fusion</text>
+  <text x="686" y="228" font-size="12.5" fill="#6B7280">Mixes the 80, 40 and 20 maps</text>
+  <text x="686" y="247" font-size="12.5" fill="#6B7280">so small and large objects are</text>
+  <text x="686" y="266" font-size="12.5" fill="#6B7280">both visible.</text>
+
+  <path d="M 822 130 L 860 130" stroke="#4B5563" stroke-width="1.8" marker-end="url(#a)"/>
+
+  <!-- 4 head -->
+  <text x="868" y="40" font-size="13.5" font-weight="bold" fill="#6B7280">4 — HEAD</text>
+  <rect x="868" y="56" width="274" height="150" rx="5" fill="#E7EEF8" stroke="#2F5D8E" stroke-width="1.8"/>
+  <text x="1005" y="82" font-size="13.5" text-anchor="middle" fill="#1B3B5C">three prediction grids</text>
+  <rect x="884" y="94" width="76" height="76" fill="#FFFFFF" stroke="#2F5D8E" stroke-width="1.2"/>
+  <g stroke="#B7C9DE" stroke-width="0.8">
+    <path d="M 903 94 V 170 M 922 94 V 170 M 941 94 V 170 M 884 113 H 960 M 884 132 H 960 M 884 151 H 960"/>
+  </g>
+  <text x="922" y="186" font-size="11.5" text-anchor="middle" fill="#3D6EA0">80 x 80</text>
+  <rect x="976" y="106" width="52" height="52" fill="#FFFFFF" stroke="#2F5D8E" stroke-width="1.2"/>
+  <g stroke="#B7C9DE" stroke-width="0.8">
+    <path d="M 993 106 V 158 M 1010 106 V 158 M 976 123 H 1028 M 976 140 H 1028"/>
+  </g>
+  <text x="1002" y="186" font-size="11.5" text-anchor="middle" fill="#3D6EA0">40 x 40</text>
+  <rect x="1050" y="114" width="36" height="36" fill="#FFFFFF" stroke="#2F5D8E" stroke-width="1.2"/>
+  <g stroke="#B7C9DE" stroke-width="0.8">
+    <path d="M 1062 114 V 150 M 1074 114 V 150 M 1050 126 H 1086 M 1050 138 H 1086"/>
+  </g>
+  <text x="1068" y="186" font-size="11.5" text-anchor="middle" fill="#3D6EA0">20 x 20</text>
+
+  <text x="868" y="228" font-size="12.5" fill="#6B7280">Per grid cell: 4 box coordinates</text>
+  <text x="868" y="247" font-size="12.5" fill="#6B7280">plus a confidence for each of the</text>
+  <text x="868" y="266" font-size="12.5" fill="#6B7280">80 COCO classes.</text>
+
+  <!-- bottom row -->
+  <path d="M 1005 282 L 1005 316 L 600 316 L 600 348" stroke="#4B5563" stroke-width="1.8" fill="none" marker-end="url(#a)"/>
+
+  <rect x="380" y="350" width="440" height="58" rx="5" fill="#F3F4F6" stroke="#9CA3AF" stroke-width="1.5"/>
+  <text x="600" y="376" font-size="15" text-anchor="middle" fill="#1F2937">approx. 8400 candidates</text>
+  <text x="600" y="397" font-size="12.5" text-anchor="middle" fill="#6B7280">almost all of them noise with confidence near zero</text>
+  <path d="M 600 408 L 600 440" stroke="#4B5563" stroke-width="1.8" marker-end="url(#a)"/>
+
+  <rect x="380" y="442" width="440" height="58" rx="5" fill="#E7EEF8" stroke="#2F5D8E" stroke-width="1.7"/>
+  <text x="600" y="468" font-size="15" text-anchor="middle" fill="#1B3B5C">confidence threshold  +  class whitelist</text>
+  <text x="600" y="489" font-size="12.5" text-anchor="middle" fill="#3D6EA0">conf &gt;= 0.5 for display, everything &gt;= 0.25 recorded in JSON</text>
+  <path d="M 600 500 L 600 532" stroke="#4B5563" stroke-width="1.8" marker-end="url(#a)"/>
+
+  <rect x="380" y="534" width="440" height="52" rx="5" fill="#E8F4EC" stroke="#2F7D4F" stroke-width="1.7"/>
+  <text x="600" y="566" font-size="15" text-anchor="middle" fill="#1B4D31">a handful of final detections</text>
+
+  <!-- NMS callout -->
+  <rect x="852" y="350" width="300" height="150" rx="6" fill="#FDECEC" stroke="#B91C1C" stroke-width="1.7"/>
+  <text x="872" y="378" font-size="14.5" font-weight="bold" fill="#8F1616">YOLO26 is NMS-free</text>
+  <text x="872" y="404" font-size="12.5" fill="#8F1616">Earlier YOLO versions needed a sixth</text>
+  <text x="872" y="422" font-size="12.5" fill="#8F1616">step to merge duplicate boxes for the</text>
+  <text x="872" y="440" font-size="12.5" fill="#8F1616">same object. YOLO26 does it inside</text>
+  <text x="872" y="458" font-size="12.5" fill="#8F1616">the network.</text>
+  <text x="872" y="484" font-size="12.5" font-weight="bold" fill="#8F1616">Result: latency does not grow with</text>
+  <text x="872" y="498" font-size="12.5" font-weight="bold" fill="#8F1616">the number of objects in frame.</text>
+
+  <!-- weights callout -->
+  <rect x="48" y="350" width="300" height="150" rx="6" fill="#FCF1E4" stroke="#B9762F" stroke-width="1.6"/>
+  <text x="68" y="378" font-size="14.5" font-weight="bold" fill="#8A5620">Where the weights came from</text>
+  <text x="68" y="404" font-size="12.5" fill="#8A5620">2.4 million numbers, trained once by</text>
+  <text x="68" y="422" font-size="12.5" fill="#8A5620">Ultralytics on COCO: 118,000 images</text>
+  <text x="68" y="440" font-size="12.5" fill="#8A5620">and 860,000 hand-drawn boxes, over</text>
+  <text x="68" y="458" font-size="12.5" fill="#8A5620">several days on 8x A100 GPUs.</text>
+  <text x="68" y="484" font-size="12.5" font-weight="bold" fill="#8A5620">We download the result: 6 MB.</text>
+</svg>
