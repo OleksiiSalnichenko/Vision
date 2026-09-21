@@ -47,6 +47,15 @@ class OutputConfig:
 class CaptureConfig:
     width: int
     height: int
+    camera: int
+    count: int
+    interval: float
+
+
+@dataclass
+class BenchConfig:
+    runs: int
+    warmup: int
 
 
 @dataclass
@@ -56,6 +65,7 @@ class Config:
     display: DisplayConfig
     output: OutputConfig
     capture: CaptureConfig
+    bench: BenchConfig
 
 
 _SECTIONS = {
@@ -63,11 +73,16 @@ _SECTIONS = {
     "display": DisplayConfig,
     "output": OutputConfig,
     "capture": CaptureConfig,
+    "bench": BenchConfig,
 }
 
 
 def _positive(value: float) -> bool:
     return value > 0
+
+
+def _non_negative(value: float) -> bool:
+    return value >= 0
 
 
 def _unit_interval(value: float) -> bool:
@@ -95,10 +110,16 @@ _RULES: dict[str, tuple[type, Any]] = {
     "output.dir": (str, _non_empty),
     "capture.width": (int, _positive),
     "capture.height": (int, _positive),
+    "capture.camera": (int, _non_negative),
+    "capture.count": (int, _positive),
+    "capture.interval": (float, _non_negative),
+    "bench.runs": (int, _positive),
+    "bench.warmup": (int, _non_negative),
 }
 
 _RANGE_TEXT = {
     _positive: "must be positive",
+    _non_negative: "must not be negative",
     _unit_interval: "must be between 0 and 1",
     _non_empty: "must not be empty",
 }

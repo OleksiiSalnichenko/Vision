@@ -1,5 +1,8 @@
 # The single place for every number, threshold and path in this project.
-# Schema: ARCHITECTURE.md section 9, plus display.center_line.
+# Schema: ARCHITECTURE.md section 9, plus the keys this project adds --
+# display.center_line, capture.camera, capture.count, capture.interval and the
+# whole bench section. The schema itself lives in core/config.py; a key added
+# here without a rule there (or the other way round) is an error, not a default.
 
 model:
   weights: models/yolo26n.pt
@@ -28,3 +31,10 @@ output:
 capture:
   width: 1280
   height: 720
+  camera: 0             # webcam index scripts/grab.py opens by default
+  count: 5              # frames scripts/grab.py saves per run
+  interval: 1.0         # seconds between saved frames; also lets the sensor settle
+
+bench:
+  runs: 10              # measured passes over the source
+  warmup: 3             # discarded passes: the first inference is always slower

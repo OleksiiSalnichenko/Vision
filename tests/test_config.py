@@ -33,6 +33,13 @@ output:
 capture:
   width: 1920
   height: 1080
+  camera: 1
+  count: 3
+  interval: 0.5
+
+bench:
+  runs: 4
+  warmup: 1
 """
 
 
@@ -59,6 +66,11 @@ def test_valid_config_exposes_every_value(tmp_path):
     assert cfg.output.dir == "results"
     assert cfg.capture.width == 1920
     assert cfg.capture.height == 1080
+    assert cfg.capture.camera == 1
+    assert cfg.capture.count == 3
+    assert cfg.capture.interval == 0.5
+    assert cfg.bench.runs == 4
+    assert cfg.bench.warmup == 1
 
 
 def test_wrong_type_fails_and_the_message_names_the_key(tmp_path):
@@ -108,6 +120,14 @@ DOCUMENTED_SCHEMA = {
     "output.dir": str,
     "capture.width": int,
     "capture.height": int,
+    # Added by task 06 for the two other entry points: bench.py and
+    # scripts/grab.py have numbers of their own, and a default sitting in
+    # argparse would be exactly the constant config.yaml exists to prevent.
+    "capture.camera": int,
+    "capture.count": int,
+    "capture.interval": float,
+    "bench.runs": int,
+    "bench.warmup": int,
 }
 
 

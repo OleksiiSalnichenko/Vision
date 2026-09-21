@@ -41,6 +41,13 @@ output:
 capture:
   width: 1280
   height: 720
+  camera: 0
+  count: 5
+  interval: 1.0
+
+bench:
+  runs: 10
+  warmup: 3
 """
 
 
