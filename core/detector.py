@@ -7,17 +7,43 @@ own duplicates; porting NMS from YOLO11 examples would only cost accuracy.
 
 Nothing in this module reaches the network. `ultralytics` is imported lazily,
 after the weights file has been confirmed on disk, so that the missing-weights
-path costs neither a model load nor a download attempt.
+path costs neither a model load nor a download attempt -- and Ultralytics' own
+outbound traffic is switched off at the top of this file, before that import
+can happen.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 from core.config import Config
 from core.geometry import offsets
 from core.types import Detection, Frame
+
+# Ultralytics decides once, while `ultralytics.utils` is being imported,
+# whether it may go out: `ONLINE = is_online()` resolves a DNS name and freezes
+# the answer, and the analytics thread, the Sentry hook and the pip update
+# check all read that frozen flag afterwards. `YOLO_OFFLINE` is the switch
+# version 8.4 reads, and it is only read during that import -- set a line too
+# late it changes nothing, while the analytics POST to google-analytics.com
+# still leaves on every `predict`, swallowed, from a background thread.
+#
+# This module is where it belongs: it is the only one in the project that
+# imports `ultralytics`, and `detect.py`, `bench.py` and the tests all reach a
+# model through it, so no entry point can get in ahead of this line.
+# `scripts/fetch_models.py` deliberately stays outside this import path -- the
+# one-time weight download is the one step that is meant to go online.
+#
+# It is set here and not in the user's Ultralytics `settings.json` because that
+# file belongs to the machine, not to this repository: a clone on a bare Pi has
+# to be offline the moment it is checked out, with nothing configured by hand.
+os.environ["YOLO_OFFLINE"] = "1"
+# The other runtime network path: Ultralytics will pip-install a dependency it
+# finds missing. Installing is `requirements.txt`'s job and happens before a
+# run, never during one.
+os.environ["YOLO_AUTOINSTALL"] = "0"
 
 log = logging.getLogger(__name__)
 

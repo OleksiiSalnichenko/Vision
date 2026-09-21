@@ -3,10 +3,10 @@
 Only reached behind `--color`; nothing else in the pipeline imports it, so the
 `scikit-learn` cost is paid only when the user asks for it.
 
-Two decisions live here and nowhere else (spec, "Межі та шви"): the clustering
-and the palette of names. The sample is taken from the central third of the box
-because the edges of a box always touch background, which would otherwise win
-the vote on thin objects.
+Two decisions live here and nowhere else (spec, "Boundaries and seams"): the
+clustering and the palette of names. The sample is taken from the central third
+of the box because the edges of a box always touch background, which would
+otherwise win the vote on thin objects.
 """
 
 from __future__ import annotations

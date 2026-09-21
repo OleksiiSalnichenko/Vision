@@ -12,7 +12,9 @@ own photos.
 
 Everything runs offline on the CPU. The network is touched in exactly two
 places: `pip install` and `scripts/fetch_models.py`. Nothing else in the
-project is allowed to reach it.
+project is allowed to reach it -- including Ultralytics, whose usage analytics
+`core/detector.py` switches off before the library is imported, so a fresh
+clone is offline on any machine without anything being configured by hand.
 
 - Python 3.11 in a project-local `venv\`
 - YOLO26 through `ultralytics`, weights loaded from an explicit local path
@@ -170,11 +172,11 @@ carries on writing files.
 show it, and what you see depends on how far the run got. A detection run
 prints `Ð°Ð²Ñ‚Ð¾Ð±ÑƒÑ: 4 detections`: those are the UTF-8 bytes of the real
 name, drawn with a legacy code page. A usage error thrown before the model
-loads prints `source not found: data\test_images\\u0444ото.jpg`
-instead, with the characters escaped. Neither is a failure and neither stops
-the run: the files on disk carry the real name, and `out\` holds them spelled
-correctly. `chcp 65001` before the run, or a terminal already set to UTF-8,
-prints both properly.
+loads prints `source not found: data\test_images\u0444\u043e\u0442\u043e.jpg`
+instead, with every non-ASCII character escaped. Neither is a failure and
+neither stops the run: the files on disk carry the real name, and `out\`
+holds them spelled correctly. `chcp 65001` before the run, or a terminal
+already set to UTF-8, prints both properly.
 
 **`torch.cuda.is_available()` is `False`** -- expected. The installed wheels
 are CPU-only and the whole project is built for a machine without CUDA.

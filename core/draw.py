@@ -6,9 +6,9 @@ centre and `dx / dy` printed inside the box. The line between the two centres
 is off by default and appears only with `display.center_line: true`.
 
 Colours, thicknesses and label layout are this module's own business (spec,
-"Межі та шви"): they describe how the overlay looks, not what the detector
-does, so they stay here as named constants instead of growing `config.yaml`.
-Everything a user is expected to switch comes from `Config`.
+"Boundaries and seams"): they describe how the overlay looks, not what the
+detector does, so they stay here as named constants instead of growing
+`config.yaml`. Everything a user is expected to switch comes from `Config`.
 """
 
 from __future__ import annotations
