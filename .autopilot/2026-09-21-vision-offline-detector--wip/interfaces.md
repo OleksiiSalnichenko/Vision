@@ -61,4 +61,16 @@
 
 ## Побудовано тасками
 
-(порожньо — заповнюється в міру завершення тасків)
+### З таска 01 — середовище
+
+- Інтерпретатор проєкту — `venv\Scripts\python` (Python 3.11.9). Системний
+  `python` лишається 3.7.3 і не використовується ніде.
+- `py -3.11` працює; `py -0p` друкує нову версію як `-3.1-64` — косметичний баг
+  старого лаунчера від 3.7, шлях у виводі правильний.
+- Тести: `venv\Scripts\python -m pytest -q`; один файл —
+  `venv\Scripts\python -m pytest -q <шлях>`.
+- `requirements.txt`: `ultralytics>=8.4`, `opencv-python`, `pyyaml`, `numpy`,
+  `scikit-learn`, `pytest` — без верхніх меж.
+- Встановлено: ultralytics 8.4.157, torch 2.14.0+cpu, opencv-python 5.0.0.93,
+  numpy 2.4.6, scikit-learn 1.9.1, pyyaml 6.0.3, pytest 9.1.1.
+- `torch.cuda.is_available()` → `False`. Це очікувано і не помилка: колеса CPU.
