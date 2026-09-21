@@ -11,7 +11,7 @@
   "memoryFile": "CLAUDE.md",
   "skillDir": "C:/Users/asaln/.claude/skills/autopilot",
   "startedAt": "2026-09-21T19:11:37+02:00",
-  "updatedAt": "2026-09-21T19:52:45+02:00",
+  "updatedAt": "2026-09-21T20:06:22+02:00",
   "finishedAt": null,
   "stages": [
     {
@@ -60,8 +60,8 @@
   ],
   "requirements": {
     "total": 68,
-    "done": 0,
-    "inTicket": 63,
+    "done": 30,
+    "inTicket": 33,
     "inSpec": 0,
     "placeholder": 0,
     "deferred": 4,
@@ -98,7 +98,7 @@
       "finishedAt": "2026-09-21T19:52:45+02:00",
       "files": ["requirements.txt", "venv/"],
       "tests": { "passed": 0, "failed": 0 },
-      "commit": "",
+      "commit": "e1ce3eb",
       "concerns": ["py -0p друкує 3.11 як -3.1-64 — косметичний баг старого лаунчера"],
       "retries": 0,
       "repairs": 0,
@@ -127,10 +127,15 @@
         "models/",
         "data/test_images/"
       ],
-      "status": "in-progress",
+      "status": "done",
+      "finishedAt": "2026-09-21T20:06:22+02:00",
+      "files": ["scripts/fetch_models.py", "models/checksums.txt"],
+      "tests": { "passed": 22, "failed": 0 },
+      "commit": "8e9ca17",
+      "repairFindings": ["один поріг розміру на обидві ваги пропускав обрізаний yolo26s.pt"],
       "startedAt": "2026-09-21T19:52:45+02:00",
       "retries": 0,
-      "repairs": 0,
+      "repairs": 1,
       "handoffs": 0
     },
     {
@@ -160,10 +165,15 @@
         "config.yaml",
         "tests/"
       ],
-      "status": "in-progress",
+      "status": "done",
+      "finishedAt": "2026-09-21T20:06:22+02:00",
+      "files": ["core/__init__.py", "core/types.py", "core/config.py", "core/geometry.py", "config.yaml", "tests/"],
+      "tests": { "passed": 22, "failed": 0 },
+      "commit": "5daff5b",
+      "repairFindings": ["тест прибивав значення config.yaml, які користувач має право крутити"],
       "startedAt": "2026-09-21T19:52:45+02:00",
       "retries": 0,
-      "repairs": 0,
+      "repairs": 1,
       "handoffs": 0
     },
     {
@@ -195,7 +205,8 @@
         "core/events.py",
         "core/aim.py"
       ],
-      "status": "pending",
+      "status": "in-progress",
+      "startedAt": "2026-09-21T20:06:22+02:00",
       "retries": 0,
       "repairs": 0,
       "handoffs": 0
@@ -221,7 +232,8 @@
         "core/attributes.py",
         "core/output.py"
       ],
-      "status": "pending",
+      "status": "in-progress",
+      "startedAt": "2026-09-21T20:06:22+02:00",
       "retries": 0,
       "repairs": 0,
       "handoffs": 0
@@ -263,7 +275,7 @@
     }
   ],
   "singlePass": null,
-  "tests": null,
+  "tests": { "passed": 9, "failed": 0 },
   "debt": {
     "placeholders": [],
     "assumptions": [],
@@ -277,10 +289,19 @@
     "extra": 12,
     "note": "G2: пропущено core/__init__.py — додано в Межі та шви. Наполовину: .gitignore, git init, README.md, ~700 рядків, R59, фолбеки yolo26s/imgsz960/зйомка зблизька, відкрите питання про колір — усі дописані. Зайве: Include_launcher=1 прибрано як не з брифа; решта — R##.n поглиблення і ремесло, лишено."
   },
-  "concerns": [],
+    "concerns": [
+    "scripts/fetch_models.py:31 — дві механіки staging для одного інваріанта (тека .part для ваг, суфікс .part для фото); третя ціль додасть третю гілку",
+    "scripts/fetch_models.py:23 ↔ config.yaml:5 — тека призначення зашита в скрипті, шлях ваг живе в конфігу: два незалежні факти про одне місце",
+    "scripts/fetch_models.py — MIN_BYTES[name] на невідомій цілі дасть сирий KeyError замість FetchError; пороги стоять близько до реального розміру",
+    "core/config.py:84 ↔ :24-50 — перелік ключів живе двічі (поля дата-класів і _RULES); поле без правила впаде сирим KeyError",
+    "core/config.py:100 — _RANGE_TEXT прив'язує текст до предиката збоку",
+    "tests/test_geometry.py:26 — очікуване dx_pct записане тим самим виразом, що й у коді (310/320), а не літералом",
+    "tests/test_config.py — після виправлення зник інваріант «whitelist, а не всі 80»: тепер лише isinstance(classes, list)",
+    "tests/test_config.py:9 ↔ tests/conftest.py:6 — PROJECT_ROOT визначено двічі"
+  ],
   "reviewers": {
-    "manifestSpec": null,
-    "craft": null
+    "manifestSpec": "rev-ms-1",
+    "craft": "rev-craft-1"
   },
   "blind": null
 }

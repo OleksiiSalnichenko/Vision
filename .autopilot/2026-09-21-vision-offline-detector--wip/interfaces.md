@@ -74,3 +74,33 @@
 - Встановлено: ultralytics 8.4.157, torch 2.14.0+cpu, opencv-python 5.0.0.93,
   numpy 2.4.6, scikit-learn 1.9.1, pyyaml 6.0.3, pytest 9.1.1.
 - `torch.cuda.is_available()` → `False`. Це очікувано і не помилка: колеса CPU.
+
+### З таска 02 — ваги і тестове фото
+
+- `venv\Scripts\python scripts\fetch_models.py` — без аргументів, exit 0 / 1.
+  Єдине місце в проєкті, де код іде в мережу. Ніде більше мережі бути не повинно.
+- На диску: `models\yolo26n.pt`, `models\yolo26s.pt`, `data\test_images\bus.jpg`.
+- `models\checksums.txt` — рядки `<sha256>  <шлях від кореня проєкту>`, три файли.
+- Статуси в підсумку скрипта: `downloaded` | `skip`.
+- Стейджинг завантаження — тека `models\.part\<ім'я>.pt` (резолвер Ultralytics
+  шукає ассет за точним іменем). Недописаного файлу в `models\` не буває.
+- Пороги розміру — іменовані константи всередині скрипта, не в `config.yaml`:
+  це одноразовий інструмент, а не модуль ядра.
+
+### З таска 03 — ядро: типи, конфіг, геометрія
+
+- `core.types.Detection(cls_id:int, cls_name:str, conf:float, bbox:tuple,
+  center:tuple, dx:int, dy:int, dx_pct:float, dy_pct:float, color:str|None=None)`
+- `core.types.Frame(image:np.ndarray, source:str, index:int)`
+- `core.geometry.offsets(bbox:(x1,y1,x2,y2), frame_size:(width,height))
+  -> (center:(int,int), dx:int, dy:int, dx_pct:float, dy_pct:float)`.
+  Центр і `dx`/`dy` округлені до цілих пікселів; `dx_pct` рахується з цілого `dx`.
+- `core.config.load_config(path) -> Config`; `core.config.ConfigError(ValueError)`
+- `Config`: `.model(.weights,.imgsz,.conf,.conf_debug)`, `.classes:list[str]`,
+  `.display(.show_labels,.show_offsets,.crosshair,.center_line)`,
+  `.output(.save_json,.save_image,.dir)`, `.capture(.width,.height)`
+- **Дефолтів у коді немає взагалі.** Відсутній ключ — `ConfigError` з іменем
+  ключа. Новий ключ додається в `config.yaml`, а не константою в модулі.
+- `tests/conftest.py` додає корінь проєкту в `sys.path` — інакше `import core`
+  не працює без встановлення пакета.
+- Не винаходь заново: геометрію рахує `offsets`, конфіг читає `load_config`.
