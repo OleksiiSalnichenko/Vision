@@ -21,9 +21,8 @@ import json
 import os
 import subprocess
 import sys
-from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+from conftest import PROJECT_ROOT
 
 # Sockets are trapped rather than cut: a trap that raised would make
 # Ultralytics conclude it is offline for the wrong reason and hide the flag

@@ -26,49 +26,21 @@ from core.types import Detection, Frame
 CONF = 0.5
 CONF_DEBUG = 0.25
 
-CONFIG_TEMPLATE = """
-model:
-  weights: models/yolo26n.pt
-  imgsz: 640
-  conf: 0.5
-  conf_debug: 0.25
-
-classes:
-  - person
-  - bottle
-
-display:
-  show_labels: true
-  show_offsets: true
-  crosshair: true
-  center_line: false
-
-output:
-  save_json: true
-  save_image: false
-  dir: {out_dir}
-
-capture:
-  width: 1280
-  height: 720
-  camera: 0
-  count: 5
-  interval: 1.0
-
-bench:
-  runs: 10
-  warmup: 3
-"""
-
 
 @pytest.fixture
-def cfg(tmp_path):
+def cfg(tmp_path, write_config):
     """The shipped thresholds, with the output written into `tmp_path`."""
-    path = tmp_path / "config.yaml"
-    path.write_text(
-        CONFIG_TEMPLATE.format(out_dir=tmp_path.as_posix()), encoding="utf-8"
+    return load_config(
+        write_config(
+            {
+                "model.conf": CONF,
+                "model.conf_debug": CONF_DEBUG,
+                "output.save_json": True,
+                "output.save_image": False,
+                "output.dir": tmp_path.as_posix(),
+            }
+        )
     )
-    return load_config(path)
 
 
 class StubDetector:

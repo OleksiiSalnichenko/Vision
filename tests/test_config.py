@@ -1,56 +1,13 @@
 """Seam 2: core.config.load_config -- a valid file loads, a broken one fails loud."""
 
-from pathlib import Path
-
 import pytest
 
+from conftest import CONFIG_KEY_TYPES, PROJECT_ROOT
 from core.config import load_config
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-VALID_CONFIG = """
-model:
-  weights: models/yolo26s.pt
-  imgsz: 960
-  conf: 0.6
-  conf_debug: 0.3
-
-classes:
-  - person
-  - bottle
-
-display:
-  show_labels: false
-  show_offsets: true
-  crosshair: false
-  center_line: true
-
-output:
-  save_json: false
-  save_image: true
-  dir: results
-
-capture:
-  width: 1920
-  height: 1080
-  camera: 1
-  count: 3
-  interval: 0.5
-
-bench:
-  runs: 4
-  warmup: 1
-"""
-
-
-def write_config(tmp_path: Path, text: str) -> Path:
-    path = tmp_path / "config.yaml"
-    path.write_text(text, encoding="utf-8")
-    return path
-
-
-def test_valid_config_exposes_every_value(tmp_path):
-    cfg = load_config(write_config(tmp_path, VALID_CONFIG))
+def test_valid_config_exposes_every_value(write_config):
+    cfg = load_config(write_config())
 
     assert cfg.model.weights == "models/yolo26s.pt"
     assert cfg.model.imgsz == 960
@@ -73,62 +30,32 @@ def test_valid_config_exposes_every_value(tmp_path):
     assert cfg.bench.warmup == 1
 
 
-def test_wrong_type_fails_and_the_message_names_the_key(tmp_path):
-    broken = VALID_CONFIG.replace("conf: 0.6", "conf: high")
+def test_wrong_type_fails_and_the_message_names_the_key(write_config):
+    broken = write_config({"model.conf": "high"})
 
     with pytest.raises(ValueError) as failure:
-        load_config(write_config(tmp_path, broken))
+        load_config(broken)
 
     assert "model.conf" in str(failure.value)
 
 
-def test_value_out_of_range_fails_and_the_message_names_the_key(tmp_path):
-    broken = VALID_CONFIG.replace("conf_debug: 0.3", "conf_debug: 1.4")
+def test_value_out_of_range_fails_and_the_message_names_the_key(write_config):
+    broken = write_config({"model.conf_debug": 1.4})
 
     with pytest.raises(ValueError) as failure:
-        load_config(write_config(tmp_path, broken))
+        load_config(broken)
 
     assert "model.conf_debug" in str(failure.value)
 
 
-def test_unknown_key_is_a_warning_not_a_failure(tmp_path, caplog):
-    with_extra = VALID_CONFIG.replace("  crosshair: false", "  crosshair: false\n  glitter: true")
+def test_unknown_key_is_a_warning_not_a_failure(write_config, caplog):
+    with_extra = write_config({"display.glitter": True})
 
     with caplog.at_level("WARNING"):
-        cfg = load_config(write_config(tmp_path, with_extra))
+        cfg = load_config(with_extra)
 
     assert cfg.display.crosshair is False
     assert "display.glitter" in caplog.text
-
-
-# Every key of the schema in ARCHITECTURE.md section 9, plus the one this
-# project adds (display.center_line), with the type the document gives it.
-# Listed by hand from the document: the values are the user's to tune, the
-# keys are not.
-DOCUMENTED_SCHEMA = {
-    "model.weights": str,
-    "model.imgsz": int,
-    "model.conf": float,
-    "model.conf_debug": float,
-    "classes": list,
-    "display.show_labels": bool,
-    "display.show_offsets": bool,
-    "display.crosshair": bool,
-    "display.center_line": bool,
-    "output.save_json": bool,
-    "output.save_image": bool,
-    "output.dir": str,
-    "capture.width": int,
-    "capture.height": int,
-    # Added by task 06 for the two other entry points: bench.py and
-    # scripts/grab.py have numbers of their own, and a default sitting in
-    # argparse would be exactly the constant config.yaml exists to prevent.
-    "capture.camera": int,
-    "capture.count": int,
-    "capture.interval": float,
-    "bench.runs": int,
-    "bench.warmup": int,
-}
 
 
 def read_key(cfg, dotted_key: str):
@@ -138,7 +65,9 @@ def read_key(cfg, dotted_key: str):
     return value
 
 
-@pytest.mark.parametrize("dotted_key, expected_type", DOCUMENTED_SCHEMA.items())
+# The keys and types come from the shared schema in `conftest`, which is the
+# hand-written copy of the documented one.
+@pytest.mark.parametrize("dotted_key, expected_type", CONFIG_KEY_TYPES.items())
 def test_shipped_config_carries_every_documented_key(dotted_key, expected_type):
     cfg = load_config(PROJECT_ROOT / "config.yaml")
 
