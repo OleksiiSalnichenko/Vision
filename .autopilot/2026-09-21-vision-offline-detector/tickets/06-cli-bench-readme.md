@@ -50,6 +50,7 @@ venv\Scripts\python detect.py --source data/test_images/bus.jpg
 ## Критерії приймання
 
 - [ ] `detect.py --source <файл>` відкриває вікно, пише JPG і JSON, друкує рядки
+- [ ] **Поділ на «малювати» і «near-miss» робить саме `detect.py`**, через `core.detector.is_debug`: у `annotate` і `print_console` ідуть тільки детекції від `conf` і вище, а решта — окремим аргументом `debug_detections` у `write_json`. Без цього near-miss почнуть малюватися й друкуватися мовчки, і R32 зламається на проводці
 - [ ] `detect.py --source <тека>` обходить усі зображення теки
 - [ ] `--color`, `--conf`, `--classes`, `--no-window` працюють і перекривають конфіг
 - [ ] Неіснуючий файл або не-зображення дає одну англійську фразу зі шляхом і код виходу 2

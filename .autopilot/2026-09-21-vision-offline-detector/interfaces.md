@@ -25,6 +25,14 @@
 - **Жодного числа константою в коді.** Усе, що крутиться, живе в `config.yaml`.
 - **Абстракції навколо «вибору моделі» не будувати.** Перехід `n` → `s` — це
   правка одного рядка конфігу.
+- **`core/detector.py` — єдиний модуль проєкту, що імпортує `ultralytics`.**
+  Це межа, а не збіг: він виставляє `YOLO_OFFLINE` і `YOLO_AUTOINSTALL=0` на
+  верхньому рівні, **до** імпорту ultralytics, а Ultralytics 8.4.157 читає
+  `YOLO_OFFLINE` рівно один раз — під час імпорту `ultralytics.utils`
+  (`ONLINE = is_online()`). Будь-який інший модуль, що імпортує ultralytics
+  раніше, тихо знеструмить вимкнення телеметрії і поверне вихідні запити на
+  інференсі. Виняток один: `scripts/fetch_models.py` — він поза цим шляхом
+  імпорту і лишається онлайновим навмисно.
 - **Немає залежності — це `BLOCKED`, а не привід її поставити.** Повертай
   таск із поясненням, нічого не встановлюй.
 - **Не чіпати:** `ARCHITECTURE.md`, `PROJECT_PROMPT.md`, `docs/`, `.autopilot/`.
@@ -104,3 +112,75 @@
 - `tests/conftest.py` додає корінь проєкту в `sys.path` — інакше `import core`
   не працює без встановлення пакета.
 - Не винаходь заново: геометрію рахує `offsets`, конфіг читає `load_config`.
+
+### З таска 04 — джерело, детектор, події, наведення
+
+- `core.source.Source(spec: str|Path, cfg: Config)`; `__iter__() -> Iterator[Frame]`,
+  `__len__() -> int`; `core.source.IMAGE_EXTENSIONS: tuple[str, ...]`.
+  Порядок обходу теки — за іменем, регістронезалежно.
+- `core.detector.Detector(cfg: Config)`; `__call__(frame: Frame) -> list[Detection]`.
+  Повертає **все від `conf_debug` і вище**, відсортоване за `conf` спадно.
+- `core.detector.is_debug(detection: Detection, cfg: Config) -> bool` — **ось як
+  відрізнити near-miss**. Мітки `debug` у самому `Detection` немає (поле з ARCH §7
+  не додавалося). **Поділ робить викликач — `detect.py`**, і тільки він: він кличе
+  `is_debug` один раз, малює і друкує те, що вище `conf`, а в `write_json` передає
+  решту окремим аргументом `debug_detections`. `draw.py` і `output.py` порогів не
+  знають і `is_debug` не викликають.
+- `core.detector.MISSING_WEIGHTS_MESSAGE: str` — текст `FileNotFoundError`.
+- `core.events.on_detect(cls: str|None = None)`; `core.events.emit(detection)`;
+  `core.events.clear()`; `Handler = Callable[[Detection], None]`.
+  Автоматичного скидання між тестами немає: хто пише тести на `on_detect`,
+  кличе `clear()` сам.
+- `core.aim.aim(dx: int, dy: int) -> str` — заглушка. Параметра кадру в контракті
+  немає, тому повертає рядок-стрілку (ASCII: консоль Windows у cp1251).
+  Малювання стрілки на кадрі — за `core/draw.py`, якщо знадобиться.
+- Шлях до ваг резолвиться **відносно поточної теки**. Запуск не з кореня проєкту
+  вимагає абсолютного шляху в `config.yaml`.
+
+### З таска 05 — накладка, колір, вивід
+
+- `core.draw.annotate(image, detections: Sequence[Detection], cfg) -> np.ndarray`
+  — повертає копію, вхідний кадр не мутується. Центр кадру бере з
+  `geometry.offsets((0,0,w,h),(w,h))` — одне джерело з `dx`/`dy`, щоб перехрестя
+  і нуль зміщення збігалися на непарних сторонах.
+- Запис зображення йде через `cv2.imencode` + байти на диск, не `cv2.imwrite`:
+  на Windows `imwrite`/`imread` проходять через вузький рядок кодової сторінки і
+  мовчки не працюють на кириличному шляху. Читання в `source.py` обходить це
+  через `np.fromfile` + `imdecode`. **Нового коду з `cv2.imwrite`/`cv2.imread`
+  у проєкті бути не повинно.**
+- `core.attributes.dominant_color(image, bbox) -> str`. Палітра: red, orange,
+  yellow, green, cyan, blue, purple, pink, brown, black, gray, white.
+  `ValueError` на порожньому або виродженому bbox.
+- `core.output.write_json(source, detections, cfg, debug_detections=()) -> Path|None`
+- `core.output.write_image(source, image, cfg) -> Path | None`
+- `core.output.print_console(source, detections) -> None`
+- **Поділ на `detections` і `debug_detections` робить викликач** (`detect.py`):
+  ці модулі порогів не знають. Розділяти через `core.detector.is_debug`.
+  Малюються і друкуються тільки перші; у JSON ідуть обидва, near-miss з `"debug": true`.
+- JSON: `{"source": str, "detections": [{cls_id, cls_name, conf, bbox[4],
+  center[2], dx, dy, dx_pct, dy_pct, color, debug}]}` — один масив.
+- Консоль: `<stem>: N detections`, далі по рядку на детекцію.
+- Імена файлів: `<output.dir>\<stem>.json`, `<output.dir>\<stem>_annotated.jpg`;
+  тека створюється; перезапис; `camera:0` → stem `camera_0`.
+- `write_json` / `write_image` самі шанують `output.save_json` / `output.save_image`
+  і повертають `None`, коли прапорець вимкнено.
+- Кольори, товщини, шрифт, розкладка підписів, `k` для KMeans і палітра назв —
+  іменовані константи всередині цих модулів: таблиця «Межі та шви» віддала їх
+  цим модулям у володіння. Це не тюнабли `config.yaml`.
+
+### З таска 06 — CLI, вимірювання, кадри з камери, README
+
+- `detect.py`: `main(argv=None) -> int`, `parse_args`, `configure_console`,
+  `with_overrides(cfg, args) -> Config`, `process(frame, detector, cfg, want_color)`,
+  `CONFIG_PATH: Path`, `EXIT_USAGE = 2`, `Window(enabled).show(image) -> bool`.
+- `bench.py`: `main(argv=None) -> int`, `one_pass`, `measure`, `report`.
+- `scripts/grab.py`: `main(argv=None) -> int`, `open_camera` (`OSError`, якщо
+  камера зайнята або відсутня), `grab`, `IMAGES_DIR`.
+- **Поділ на drawn / near-miss живе тільки в `detect.py`** — він єдиний викликач
+  `core.detector.is_debug`.
+- `--conf` нижче `conf_debug` опускає і `conf_debug`: інакше інференс іде з
+  підлогою 0.25 і прапорець мовчки нічого не змінює.
+- Нові ключі конфігу: `capture.camera`, `capture.count`, `capture.interval`,
+  секція `bench` (`runs`, `warmup`). Схема `config.yaml` тепер ширша за ARCH §9.
+- `bench.py` і `scripts/grab.py` імпортують `configure_console`, `CONFIG_PATH`,
+  `EXIT_USAGE` з `detect.py` — щоб пастка cp1252 була закрита в одному місці.
