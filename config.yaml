@@ -1,0 +1,30 @@
+# The single place for every number, threshold and path in this project.
+# Schema: ARCHITECTURE.md section 9, plus display.center_line.
+
+model:
+  weights: models/yolo26n.pt
+  imgsz: 640            # native training size; other values usually hurt accuracy
+  conf: 0.5             # display and event threshold
+  conf_debug: 0.25      # written to JSON but not drawn -- shows near-misses
+
+classes:                # whitelist; empty means all 80 COCO classes
+  - person
+  - cell phone
+  - bottle
+  - book
+  - laptop
+
+display:
+  show_labels: true
+  show_offsets: true
+  crosshair: true
+  center_line: false    # line between the frame centre and each object centre
+
+output:
+  save_json: true
+  save_image: true
+  dir: out
+
+capture:
+  width: 1280
+  height: 720
