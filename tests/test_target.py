@@ -14,7 +14,6 @@ from core.geometry import offsets
 from core.types import Detection
 
 FRAME_SIZE = (640, 480)
-TRACK_BUFFER = 45  # tracker.track_buffer in conftest.CONFIG_SCHEMA
 
 
 def detection(track_id, bbox, conf=0.9, cls_name="person"):
@@ -42,10 +41,15 @@ CORNER = detection(3, (100.0, 60.0, 140.0, 120.0))
 
 
 @pytest.fixture
-def targeting(write_config):
+def cfg(write_config):
+    return load_config(write_config())
+
+
+@pytest.fixture
+def targeting(cfg):
     from core.target import Targeting
 
-    return Targeting(load_config(write_config()))
+    return Targeting(cfg)
 
 
 def test_without_a_click_the_target_is_the_one_nearest_the_centre(targeting):
@@ -115,9 +119,9 @@ def test_a_lost_lock_picks_up_nothing_else(targeting):
     assert state.lost is True
 
 
-def test_the_lock_is_released_after_track_buffer_frames_of_absence(targeting):
+def test_the_lock_is_released_after_track_buffer_frames_of_absence(targeting, cfg):
     targeting.click((470, 240), [RIGHT, CENTRAL])
-    for _ in range(TRACK_BUFFER):
+    for _ in range(cfg.tracker.track_buffer):
         assert targeting.choose([CENTRAL], FRAME_SIZE).lost is True
 
     state = targeting.choose([CENTRAL], FRAME_SIZE)
@@ -128,14 +132,14 @@ def test_the_lock_is_released_after_track_buffer_frames_of_absence(targeting):
     assert targeting.choose([RIGHT, CENTRAL], FRAME_SIZE).detection is CENTRAL
 
 
-def test_a_track_back_in_time_keeps_the_lock_and_restarts_the_count(targeting):
+def test_a_track_back_in_time_keeps_the_lock_and_restarts_the_count(targeting, cfg):
     targeting.click((470, 240), [RIGHT, CENTRAL])
-    for _ in range(TRACK_BUFFER):
+    for _ in range(cfg.tracker.track_buffer):
         targeting.choose([CENTRAL], FRAME_SIZE)
 
     back = targeting.choose([CENTRAL, RIGHT], FRAME_SIZE)
     assert (back.detection, back.locked, back.lost) == (RIGHT, True, False)
 
-    for _ in range(TRACK_BUFFER):
+    for _ in range(cfg.tracker.track_buffer):
         state = targeting.choose([CENTRAL], FRAME_SIZE)
     assert (state.detection, state.locked, state.lost) == (None, True, True)

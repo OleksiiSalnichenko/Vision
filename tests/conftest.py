@@ -87,11 +87,20 @@ def _dotted_types(schema: dict[str, Any]) -> dict[str, type]:
 CONFIG_KEY_TYPES = _dotted_types(CONFIG_SCHEMA)
 
 
-def config_text(overrides: dict[str, Any] | None = None) -> str:
+def schema_value(dotted: str) -> Any:
+    """The value `CONFIG_SCHEMA` holds under a dotted key such as `model.conf`."""
+    value: Any = CONFIG_SCHEMA
+    for part in dotted.split("."):
+        value = value[part]
+    return value
+
+
+def config_text(overrides: dict[str, Any] | None = None, without: tuple[str, ...] = ()) -> str:
     """`CONFIG_SCHEMA` as YAML, with dotted keys from `overrides` applied.
 
     An override key that is not in the schema is added, which is how a test
-    writes a config carrying a key the loader has never heard of.
+    writes a config carrying a key the loader has never heard of. Dotted keys
+    in `without` are removed from the data before it is serialised.
     """
     data = copy.deepcopy(CONFIG_SCHEMA)
     for dotted, value in (overrides or {}).items():
@@ -100,6 +109,12 @@ def config_text(overrides: dict[str, Any] | None = None) -> str:
         for section in sections:
             target = target.setdefault(section, {})
         target[key] = value
+    for dotted in without:
+        *sections, key = dotted.split(".")
+        target = data
+        for section in sections:
+            target = target[section]
+        del target[key]
     return yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
 
 
@@ -107,13 +122,13 @@ def config_text(overrides: dict[str, Any] | None = None) -> str:
 def write_config(tmp_path):
     """Write a complete config into `tmp_path` and return its path.
 
-    Takes the same dotted-key overrides as `config_text`, so each test states
-    only the keys it is actually about.
+    Takes the same dotted-key overrides and removals as `config_text`, so each
+    test states only the keys it is actually about.
     """
 
-    def write(overrides: dict[str, Any] | None = None) -> Path:
+    def write(overrides: dict[str, Any] | None = None, without: tuple[str, ...] = ()) -> Path:
         path = tmp_path / "config.yaml"
-        path.write_text(config_text(overrides), encoding="utf-8")
+        path.write_text(config_text(overrides, without), encoding="utf-8")
         return path
 
     return write

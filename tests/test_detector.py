@@ -10,14 +10,12 @@ import os
 import subprocess
 import sys
 import types
-from pathlib import Path
 
 import pytest
 
+from conftest import PROJECT_ROOT
 from core.config import load_config
 from core.detector import Detector
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 MISSING_WEIGHTS_MESSAGE = "run scripts/fetch_models.py first"
 

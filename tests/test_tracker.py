@@ -21,9 +21,9 @@ from core.types import Detection, Frame
 FRAME_SIZE = (640, 480)  # width, height
 STEP = 5  # pixels each box moves per frame
 
-# CONFIG_SCHEMA in conftest puts conf at 0.6 and conf_debug at 0.3, so a score
-# of 0.9 is a confident detection and 0.4 is a near-miss.
-CONFIDENT = 0.9
+# A score of 1.0 clears any `model.conf`. A near-miss score comes from the loaded
+# config instead, see `near_miss`.
+CONFIDENT = 1.0
 
 
 def detection(cls_id, cls_name, bbox, conf=CONFIDENT):
@@ -72,6 +72,11 @@ def frame(index):
 @pytest.fixture
 def cfg(write_config):
     return load_config(write_config())
+
+
+def near_miss(cfg):
+    """A score in the near-miss band: at least `conf_debug`, below `conf`."""
+    return (cfg.model.conf_debug + cfg.model.conf) / 2
 
 
 @pytest.fixture
@@ -132,16 +137,16 @@ def test_empty_frames_age_a_track_until_it_is_retired(write_config):
     assert back is not None and back != first
 
 
-def test_a_near_miss_holds_a_track_but_never_starts_one(tracker):
+def test_a_near_miss_holds_a_track_but_never_starts_one(tracker, cfg):
     first = tracker.update(frame(0), [person(0)])[0].track_id
     tracker.update(frame(1), [person(1)])
-    dim = replace(person(2), conf=0.4)
+    dim = replace(person(2), conf=near_miss(cfg))
 
     assert tracker.update(frame(2), [dim])[0].track_id == first
     assert tracker.update(frame(3), [person(3)])[0].track_id == first
 
     for n in range(4, 8):
-        stray = replace(bottle(n), conf=0.4)
+        stray = replace(bottle(n), conf=near_miss(cfg))
         assert tracker.update(frame(n), [person(n), stray])[1].track_id is None
 
 

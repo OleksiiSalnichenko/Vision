@@ -7,14 +7,14 @@ numbers for stream time -- no model, no video, no clock.
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 
 import pytest
 
+from conftest import PROJECT_ROOT
 from core.rules import Event, RuleEngine, RulesError, load_rules
 from core.types import Detection
-
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 VALID = """\
 debounce:
@@ -95,7 +95,7 @@ def test_a_missing_file_is_file_not_found(tmp_path):
 )
 def test_a_broken_file_names_the_rule_and_key(write_rules, old, new, named):
     assert old in VALID
-    with pytest.raises(RulesError, match=_literal(named)):
+    with pytest.raises(RulesError, match=re.escape(named)):
         load_rules(write_rules(VALID.replace(old, new, 1)))
 
 
@@ -121,12 +121,6 @@ def test_the_shipped_rules_file_loads_and_covers_every_condition_and_action():
     assert "on_phone" in rule_set.calls()
 
 
-def _literal(text: str) -> str:
-    import re
-
-    return re.escape(text)
-
-
 # --- RuleEngine ---------------------------------------------------------------
 
 STEP = 0.1  # seconds between frames: a 10 fps stream
@@ -144,7 +138,7 @@ def engine_for(write_rules, rules_text: str) -> RuleEngine:
     return RuleEngine(load_rules(write_rules(DEBOUNCE + "rules:\n" + rules_text)))
 
 
-def det(track_id: int, cls: str = "person", at: tuple = (0.5, 0.5)) -> Detection:
+def det(track_id: int | None, cls: str = "person", at: tuple = (0.5, 0.5)) -> Detection:
     """A detection whose centre sits at `at`, given as fractions of the frame."""
     dx_pct, dy_pct = 2 * at[0] - 1, 2 * at[1] - 1
     return Detection(
@@ -311,6 +305,22 @@ def test_the_same_track_fires_again_once_the_cooldown_is_over(write_rules):
     assert [round(e.time, 3) for e in clock.events] == [0.2, 6.5]
 
 
+def test_present_held_back_by_the_cooldown_fires_once_after_it(write_rules):
+    rules = "  - name: stays\n    when: present\n    seconds: 1\n    do: [log]\n"
+    clock = Clock(engine_for(write_rules, rules))
+    clock.feed_many(13, det(7))  # confirmed at t = 0.2, present at t = 1.2
+    clock.feed_many(5)  # gone long enough to be unconfirmed
+    # Back and reconfirmed at t = 2.0, present again from t = 3.0 -- inside the
+    # 5 s cooldown that started at 1.2 -- and staying until t = 11.7.
+    clock.feed_many(100, det(7))
+
+    times = [e.time for e in clock.events if e.when == "present"]
+    assert len(times) == 2
+    assert times[0] == pytest.approx(1.2)
+    # The first frame once the cooldown (1.2 + 5.0) is over.
+    assert 6.2 - 1e-9 <= times[1] <= 6.2 + STEP + 1e-9
+
+
 def test_a_flickering_track_does_not_flood_events(write_rules):
     # A detection oscillating 0.49 / 0.51 around the threshold reaches the
     # engine as present on one frame and absent on the next.
@@ -322,9 +332,9 @@ def test_a_flickering_track_does_not_flood_events(write_rules):
         else:
             clock.feed()
 
-    appeared = [e for e in clock.events if e.when == "appeared"]
-    assert len(appeared) <= 1
-    assert len(clock.events) <= 2
+    # Never three frames in a row, so never confirmed: nothing appears and
+    # nothing disappears.
+    assert clock.events == []
 
 
 def test_a_flickering_confirmed_track_stays_confirmed(write_rules):
@@ -396,8 +406,6 @@ def test_confirm_frames_and_cooldown_come_from_the_file(write_rules):
 
 def test_detections_without_a_track_id_are_ignored(write_rules):
     clock = Clock(engine_for(write_rules, APPEARED))
-    untracked = det(7)
-    untracked.track_id = None
-    clock.feed_many(10, untracked)
+    clock.feed_many(10, det(None))
 
     assert clock.events == []

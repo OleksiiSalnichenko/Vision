@@ -126,7 +126,7 @@ print(json.dumps({
 """
 
 
-def _run_child(script=CHILD, *args):
+def _run_child(script: str, *args: str):
     """Run `script` in a clean process and report what it touched."""
     env = dict(os.environ)
     # Both would let the parent's environment pass the test on the project's
@@ -152,14 +152,14 @@ def test_importing_the_detector_touches_no_socket():
     Ultralytics probes DNS at import to decide whether it is online. That probe
     is itself a packet, and it is what tells the telemetry it may send.
     """
-    result = _run_child()
+    result = _run_child(CHILD)
 
     assert result["calls"] == [], f"network reached during import: {result['calls']}"
 
 
 def test_telemetry_is_disabled_whatever_the_user_settings_say():
     """The analytics POST seen during acceptance can no longer be sent."""
-    result = _run_child()
+    result = _run_child(CHILD)
 
     assert result["telemetry"] is False
 
