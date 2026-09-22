@@ -22,7 +22,7 @@ import os
 import subprocess
 import sys
 
-from conftest import PROJECT_ROOT
+from conftest import PROJECT_ROOT, config_text
 
 # Sockets are trapped rather than cut: a trap that raised would make
 # Ultralytics conclude it is offline for the wrong reason and hide the flag
@@ -69,8 +69,65 @@ print(json.dumps({"calls": calls, "telemetry": bool(events.enabled)}))
 """
 
 
-def _run_child():
-    """Import the detector in a clean process and report what it touched."""
+# The tracker is the second way into Ultralytics. This child never imports
+# `core.detector` itself: `core.tracker` has to bring the switches in on its own,
+# ahead of its lazy `ultralytics` import, and one `update` has to stay local.
+# The telemetry flag is read from a fresh `Events()` built after that update, so
+# it reflects the frozen ONLINE answer whichever module imported `events` first.
+CHILD_TRACKER = r"""
+import json, socket, sys
+
+calls = []
+
+
+def trap(name, answer):
+    def call(*args, **kwargs):
+        calls.append(name)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+    return call
+
+
+socket.getaddrinfo = trap(
+    "getaddrinfo", [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 0))]
+)
+socket.create_connection = trap("create_connection", OSError("blocked by test"))
+socket.gethostbyname = trap("gethostbyname", "127.0.0.1")
+
+sys.path.insert(0, sys.argv[1])
+
+import numpy as np
+
+from core.config import load_config
+from core.geometry import offsets
+from core.tracker import Tracker  # the import under test
+from core.types import Detection, Frame
+
+cfg = load_config(sys.argv[2])
+bbox = (100.0, 100.0, 160.0, 260.0)
+center, dx, dy, dx_pct, dy_pct = offsets(bbox, (640, 480))
+det = Detection(0, "person", 0.9, bbox, center, dx, dy, dx_pct, dy_pct)
+frame = Frame(np.zeros((480, 640, 3), dtype=np.uint8), "synthetic", 0)
+tracked = Tracker(cfg).update(frame, [det])
+
+import ultralytics.utils
+import ultralytics.utils.events as analytics
+
+forced = dict(ultralytics.utils.SETTINGS)
+forced["sync"] = True
+analytics.SETTINGS = forced
+
+print(json.dumps({
+    "calls": calls,
+    "telemetry": bool(analytics.Events().enabled),
+    "track_id": tracked[0].track_id,
+}))
+"""
+
+
+def _run_child(script=CHILD, *args):
+    """Run `script` in a clean process and report what it touched."""
     env = dict(os.environ)
     # Both would let the parent's environment pass the test on the project's
     # behalf. The point is that a fresh clone is offline on its own.
@@ -78,7 +135,7 @@ def _run_child():
     env.pop("YOLO_OFFLINE", None)
 
     done = subprocess.run(
-        [sys.executable, "-c", CHILD, str(PROJECT_ROOT)],
+        [sys.executable, "-c", script, str(PROJECT_ROOT), *args],
         cwd=str(PROJECT_ROOT),
         env=env,
         capture_output=True,
@@ -105,3 +162,15 @@ def test_telemetry_is_disabled_whatever_the_user_settings_say():
     result = _run_child()
 
     assert result["telemetry"] is False
+
+
+def test_tracking_a_frame_touches_no_socket_and_keeps_telemetry_off(tmp_path):
+    """`core.tracker` is offline on its own, through import and one `update`."""
+    config = tmp_path / "config.yaml"
+    config.write_text(config_text(), encoding="utf-8")
+
+    result = _run_child(CHILD_TRACKER, str(config))
+
+    assert result["calls"] == [], f"network reached while tracking: {result['calls']}"
+    assert result["telemetry"] is False
+    assert result["track_id"] is not None  # the update really ran
