@@ -1,0 +1,38 @@
+# Rules for streams (video, webcam). Still images ignore this file.
+#
+# A rule fires on a tracked object's change, not on every frame. Debouncing is
+# what keeps a detection flickering around the confidence threshold from
+# turning into hundreds of events.
+
+debounce:
+  confirm_frames: 3     # consecutive frames before a change counts
+  cooldown: 5.0         # seconds a (rule, track) pair stays quiet after firing
+
+zones:
+  door: [0.0, 0.0, 0.3, 1.0]   # x1, y1, x2, y2 as fractions of the frame
+
+# when:  appeared | disappeared | present | entered
+# class: optional; omitted means any class
+# do:    log | save_frame | {call: <function name registered with @on_detect>}
+rules:
+  - name: person_appeared
+    when: appeared
+    class: person
+    do: [log]
+
+  - name: person_left
+    when: disappeared
+    class: person
+    do: [log]
+
+  - name: person_stays
+    when: present
+    seconds: 10         # required for present
+    class: person
+    do: [log, save_frame]
+
+  - name: phone_at_door
+    when: entered
+    zone: door          # required for entered
+    class: cell phone
+    do: [log, {call: on_phone}]
