@@ -13,23 +13,32 @@ the disk.
 
 Usage:
     venv\\Scripts\\python bench.py --source data/test_images/bus.jpg [--runs N]
+        [--weights models/yolo26n.pt models/yolo26n_openvino_model]
+
+With several `--weights`, each is measured on the same decoded frames with the
+same warm-up and run count, and the report ends with the speed-up of every
+later model over the first.
 """
 
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import logging
 import sys
 import time
+from pathlib import Path
 
 from detect import CONFIG_PATH, EXIT_USAGE, configure_console
 
 from core.config import load_config
 from core.detector import Detector
-from core.source import Source
+from core.source import IMAGE_EXTENSIONS, Source
 from core.types import Frame
 
 log = logging.getLogger("vision.bench")
+
+STILLS_ONLY_MESSAGE = "bench.py measures still images: pass an image or a folder"
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -47,7 +56,26 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=_positive_int,
         help="measured passes over the source; overrides bench.runs",
     )
+    parser.add_argument(
+        "--weights",
+        nargs="+",
+        metavar="PATH",
+        help="measure each of these in turn (a .pt file or an OpenVINO folder) "
+        "and report the speed-up over the first; defaults to model.weights",
+    )
     return parser.parse_args(argv)
+
+
+def is_still(spec: str) -> bool:
+    """True for a folder or an image file -- the only sources a benchmark takes.
+
+    Decided from the path alone, without opening anything: asking `Source`
+    would open a webcam just to be told it is one, and a video or a camera
+    yields frames at the rate they arrive, so its timing would measure the
+    source instead of the model.
+    """
+    path = Path(spec)
+    return path.is_dir() or path.suffix.lower() in IMAGE_EXTENSIONS
 
 
 def _positive_int(text: str) -> int:
@@ -88,25 +116,59 @@ def report(source: str, frames: int, runs: int, warmup: int, timings: list[float
     print(f"FPS: {1.0 / mean:.2f}")
 
 
+def report_speedup(results: list[tuple[str, list[float]]]) -> None:
+    """Print how many times faster each later model ran than the first one."""
+    if len(results) < 2:
+        return
+    _, first = results[0]
+    baseline = sum(first) / len(first)
+    print()
+    for weights, timings in results[1:]:
+        mean = sum(timings) / len(timings)
+        print(f"speedup vs first: {weights}: {baseline / mean:.2f}x")
+
+
 def main(argv: list[str] | None = None) -> int:
     configure_console()
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
     args = parse_args(argv)
 
+    if not is_still(args.source):
+        print(STILLS_ONLY_MESSAGE, file=sys.stderr)
+        return EXIT_USAGE
+
     try:
         cfg = load_config(CONFIG_PATH)
         frames = list(Source(args.source, cfg))
-        detector = Detector(cfg)
     except (FileNotFoundError, ValueError) as err:
         print(f"{err}", file=sys.stderr)
         return EXIT_USAGE
 
     runs = args.runs if args.runs is not None else cfg.bench.runs
     warmup = cfg.bench.warmup
+    all_weights = args.weights if args.weights else [cfg.model.weights]
 
-    print(f"model:   {cfg.model.weights} (imgsz {cfg.model.imgsz})")
-    timings = measure(detector, frames, runs, warmup)
-    report(args.source, len(frames), runs, warmup, timings)
+    # Every model is loaded before the first one is timed: a missing export is
+    # a usage error to report at once, not after minutes of measuring.
+    detectors = []
+    try:
+        for weights in all_weights:
+            model = dataclasses.replace(cfg.model, weights=weights)
+            detectors.append(Detector(dataclasses.replace(cfg, model=model)))
+    except (FileNotFoundError, ValueError) as err:
+        print(f"{weights}: {err}", file=sys.stderr)
+        return EXIT_USAGE
+
+    results = []
+    for number, (weights, detector) in enumerate(zip(all_weights, detectors)):
+        if number:
+            print()
+        print(f"model:   {weights} (imgsz {cfg.model.imgsz})")
+        timings = measure(detector, frames, runs, warmup)
+        report(args.source, len(frames), runs, warmup, timings)
+        results.append((weights, timings))
+
+    report_speedup(results)
     return 0
 
 

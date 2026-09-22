@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 from pathlib import Path
 
 from core.config import Config
@@ -45,11 +46,50 @@ os.environ["YOLO_OFFLINE"] = "1"
 # run, never during one.
 os.environ["YOLO_AUTOINSTALL"] = "0"
 
+# Not a network switch but a speed one, and it has the same timing constraint.
+# torch on Windows ships Intel OpenMP, whose worker threads busy-wait 200 ms
+# after every parallel region before they sleep. Ultralytics runs its pre- and
+# post-processing in torch, so those threads are still spinning on every core
+# while the next frame's inference starts -- and an OpenVINO model, which runs
+# on threads of its own, loses the cores to them: measured on this 4-core
+# laptop, 0.18 s per frame instead of 0.05, slower than the `.pt` it replaces.
+# With no spin the `.pt` path gets faster too. OpenMP reads the variable once,
+# when its runtime starts, so it has to be set before torch is imported --
+# which is why it sits here, above the only imports that bring torch in.
+os.environ["KMP_BLOCKTIME"] = "0"
+
+# OpenVINO has telemetry of its own, in the separate `openvino_telemetry`
+# package that `pip install openvino` brings along. `import openvino` imports
+# `openvino.tools.ovc` to expose `convert_model`, and that module, at import
+# time, starts a Google Analytics client and posts a "general_import" event;
+# `convert_model` posts several more during an export. The client runs
+# opt-out: with no consent file in the user profile it counts as consent, and
+# the POST leaves from a background thread with its failure swallowed -- on
+# every model load, not only on the first.
+#
+# The package has no switch of its own beyond "is this a CI job", which would
+# mean lying about the environment to every other library in the process.
+# OpenVINO itself, though, imports it inside `try/except ImportError` and falls
+# back to `openvino.tools.ovc.telemetry_stub`, whose methods do nothing. A
+# `None` in `sys.modules` makes that import fail for this process only, so the
+# stub is what gets used. Like `YOLO_OFFLINE`, it has to be in place before the
+# first `import openvino`, and like it, it stays out of the user profile: the
+# consent file there belongs to the machine, not to this repository.
+sys.modules.setdefault("openvino_telemetry", None)
+
 log = logging.getLogger(__name__)
 
 # Quoted verbatim from ARCHITECTURE.md section 7 and the brief. Users grep for
 # this sentence, so it is the whole message and nothing is appended to it.
 MISSING_WEIGHTS_MESSAGE = "run scripts/fetch_models.py first"
+
+# The OpenVINO counterpart: a `*_openvino_model` folder only exists after the
+# offline export, never after `fetch_models.py`, so that is the step to name.
+MISSING_EXPORT_MESSAGE = "run scripts/export_openvino.py first"
+
+# How Ultralytics names an exported OpenVINO model: `<stem>_openvino_model/`
+# next to the `.pt`, with the network in an `.xml` file inside.
+OPENVINO_SUFFIX = "_openvino_model"
 
 
 class Detector:
@@ -63,10 +103,10 @@ class Detector:
         # it is handed a name it cannot find on disk. On a machine with no
         # network that turns into a confusing crash somewhere deeper, so the
         # check happens here, before `ultralytics` is even imported.
-        if not weights.is_file():
-            log.error("weights file not found: %s", weights.resolve())
-            raise FileNotFoundError(MISSING_WEIGHTS_MESSAGE)
+        _require_weights(weights)
 
+        # `YOLO` picks the backend from the path itself -- a `.pt` file or an
+        # OpenVINO folder -- so nothing below this line knows the format.
         from ultralytics import YOLO  # noqa: PLC0415 -- deliberately lazy
 
         self._model = YOLO(str(weights))
@@ -96,6 +136,25 @@ class Detector:
         ]
         detections.sort(key=lambda det: det.conf, reverse=True)
         return detections
+
+
+def _require_weights(weights: Path) -> None:
+    """Raise `FileNotFoundError` unless `weights` is a model Ultralytics can load.
+
+    A file is taken as it is. A folder has to hold an OpenVINO `.xml`: an
+    export interrupted half-way leaves the folder behind, and handing that to
+    Ultralytics ends in a traceback about a missing file deep inside it.
+    """
+    if weights.is_file():
+        return
+    if weights.is_dir() and any(weights.glob("*.xml")):
+        return
+
+    log.error("weights not found: %s", weights.resolve())
+    if weights.name.endswith(OPENVINO_SUFFIX):
+        raise FileNotFoundError(MISSING_EXPORT_MESSAGE)
+    raise FileNotFoundError(MISSING_WEIGHTS_MESSAGE)
+
 
 def is_debug(detection: Detection, cfg: Config) -> bool:
     """True for a near-miss: at or above `conf_debug`, but below `conf`.

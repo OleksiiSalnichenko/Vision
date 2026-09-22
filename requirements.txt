@@ -5,4 +5,5 @@ numpy
 scikit-learn
 pytest
 lap
-openvino
+# 2026.4.0 crashes the process (0xC0000005) compiling for this laptop's Intel iGPU, which Ultralytics' AUTO device tries
+openvino==2026.3.1

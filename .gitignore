@@ -11,6 +11,7 @@ venv/
 
 # Project artefacts
 models/*.pt
+models/*_openvino_model/
 out/
 data/
 
