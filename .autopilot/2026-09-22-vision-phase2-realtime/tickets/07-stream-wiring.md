@@ -58,6 +58,12 @@
     `output.write_event_frame` (розмічений кадр); `call` →
     `events.call(name, event.detection)` → `writer.write(...)` → `window.show`.
   - `events.emit` на потоці **не викликається** (лише `call` з правил).
+  - **Новий `Tracker`, `Targeting` і `RuleEngine` на кожен потік** — кулдауни
+    ключовані `track_id`, а id після нового трекера починаються з 1.
+  - Об'єкт на першому кадрі має `track_id=None` — клік по ньому нічого не
+    блокує; це нормально, не обходь.
+  - `OSError` від `StreamWriter` (напр. `output.dir` із шляхом поза кодовою
+    сторінкою не дає писати `.mp4`) — одне речення в stderr, код 2, без трейсбеку.
   - Завершення: кінець файлу, `q`/`Esc`, `KeyboardInterrupt` → код 0; `OSError`
     від камери посеред роботи → повідомлення в stderr, код 1. Усі шляхи —
     `writer.close()` і `print_stream_summary`. `events.clear()` наприкінці, якщо

@@ -2,7 +2,7 @@
 
 **Вимоги:** R17, R18, R19, R20, R21, R41, R43, R44, R45, R46
 **Blocked by:** 01
-**Зона:** `core/detector.py` · `scripts/export_openvino.py` · `bench.py` · `tests/test_detector.py` · `tests/test_export.py` · `tests/test_bench.py`
+**Зона:** `core/detector.py` · `scripts/export_openvino.py` · `bench.py` · `tests/test_detector.py` · `tests/test_export.py` · `tests/test_bench.py` · `tests/test_offline_openvino.py`
 **Хвиля:** 2
 **Status:** ready
 
@@ -81,6 +81,20 @@
    `git diff config.yaml` порожній. Порівняй класи й кількість детекцій із `.pt`.
 5. Під час кроків 1 і 3 мережа не потрібна: якщо щось із Ultralytics пробує
    мережу — це `BLOCKED` із виводом, не обхід.
+
+**Телеметрія OpenVINO.** Разом з `openvino` у venv приїхав пакет
+`openvino-telemetry` (таск 01). Бриф: «Fully offline at runtime». З'ясуй за
+вихідним кодом у `venv\Lib\site-packages\openvino_telemetry\` і
+`venv\Lib\site-packages\openvino\`, коли він надсилає дані (завантаження
+моделі? `convert_model` під час експорту?) і що його вимикає. Вимкни його в
+коді проєкту так само, як `core/detector.py` вимикає телеметрію Ultralytics — на
+рівні процесу, до першого імпорту `openvino`, **не** через налаштування машини
+(файл згоди в профілі користувача належить машині, не репозиторію). Додай у
+`tests/test_detector.py` (або новий `tests/test_offline_openvino.py` — твоя зона)
+підпроцесну перевірку в стилі `tests/test_offline.py`: імпорт `core.detector`,
+потім `import openvino` і те, що в `openvino_telemetry` відповідає за надсилання,
+не торкаються сокетів / телеметрія вимкнена. Якщо вимкнути на рівні процесу
+неможливо — `DONE_WITH_CONCERNS` з одним реченням, що саме і де.
 
 **Тести** (моделі не вантажать):
 
