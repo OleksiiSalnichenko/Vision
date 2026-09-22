@@ -28,6 +28,49 @@ def test_valid_config_exposes_every_value(write_config):
     assert cfg.capture.interval == 0.5
     assert cfg.bench.runs == 4
     assert cfg.bench.warmup == 1
+    assert cfg.tracker.track_buffer == 45
+    assert cfg.tracker.match_thresh == 0.7
+    assert cfg.tracker.fuse_score is False
+    assert cfg.rules.file == "my_rules.yaml"
+
+
+def test_shipped_config_carries_the_tracker_and_rules_values():
+    cfg = load_config(PROJECT_ROOT / "config.yaml")
+
+    assert cfg.tracker.track_buffer == 30
+    assert cfg.tracker.match_thresh == 0.8
+    assert cfg.tracker.fuse_score is True
+    assert cfg.rules.file == "rules.yaml"
+
+
+def test_missing_new_key_fails_and_the_message_names_the_key(write_config):
+    path = write_config()
+    text = path.read_text(encoding="utf-8")
+    path.write_text(text.replace("  match_thresh: 0.7\n", ""), encoding="utf-8")
+
+    with pytest.raises(ValueError) as failure:
+        load_config(path)
+
+    assert "tracker.match_thresh" in str(failure.value)
+
+
+@pytest.mark.parametrize(
+    "dotted_key, bad_value",
+    [
+        ("tracker.match_thresh", 1.5),
+        ("tracker.track_buffer", 0),
+        ("tracker.track_buffer", 2.5),
+        ("tracker.fuse_score", "yes"),
+        ("rules.file", "  "),
+    ],
+)
+def test_bad_new_key_fails_and_the_message_names_the_key(write_config, dotted_key, bad_value):
+    broken = write_config({dotted_key: bad_value})
+
+    with pytest.raises(ValueError) as failure:
+        load_config(broken)
+
+    assert dotted_key in str(failure.value)
 
 
 def test_wrong_type_fails_and_the_message_names_the_key(write_config):

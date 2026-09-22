@@ -1,8 +1,10 @@
 """The data that crosses module boundaries. Contract only, no logic.
 
 `Detection` is the single type every consumer reads -- drawing, JSON, console,
-events and, later, servo control. Fields follow ARCHITECTURE.md section 7
-exactly; nothing is added here without changing that document first.
+events and, later, servo control. Fields follow ARCHITECTURE.md section 7,
+plus `Detection.track_id` and `Frame.time`, added by decisions 3 and 4 of the
+phase-2 spec -- the matching change to section 7 is proposed to the user, and
+nothing else is added here without that document changing first.
 """
 
 from __future__ import annotations
@@ -26,6 +28,7 @@ class Detection:
     dx_pct: float  # dx as a fraction of half the frame width, -1..1
     dy_pct: float  # dy as a fraction of half the frame height, -1..1
     color: str | None = None  # dominant colour name, only when --color is set
+    track_id: int | None = None  # set by core.tracker on streams only
 
 
 @dataclass
@@ -35,3 +38,4 @@ class Frame:
     image: np.ndarray  # BGR, as OpenCV returns it
     source: str  # file path, or "camera:0"
     index: int  # 0 for a still image, frame number for video
+    time: float = 0.0  # seconds since the stream started; 0 for stills

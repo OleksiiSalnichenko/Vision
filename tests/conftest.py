@@ -23,7 +23,8 @@ if str(PROJECT_ROOT) not in sys.path:
 # Every key of the schema in ARCHITECTURE.md section 9, plus the ones this
 # project adds (display.center_line, capture.camera, capture.count,
 # capture.interval and the whole bench section, added by task 06 for bench.py
-# and scripts/grab.py). Listed by hand from the documents, never read back from
+# and scripts/grab.py; the tracker and rules sections, added by the phase-2
+# spec, decision 17). Listed by hand from the documents, never read back from
 # `core.config`: the keys and their types are the spec's, the values are the
 # user's to tune.
 #
@@ -59,6 +60,14 @@ CONFIG_SCHEMA: dict[str, Any] = {
     "bench": {
         "runs": 4,
         "warmup": 1,
+    },
+    "tracker": {
+        "track_buffer": 45,
+        "match_thresh": 0.7,
+        "fuse_score": False,
+    },
+    "rules": {
+        "file": "my_rules.yaml",
     },
 }
 

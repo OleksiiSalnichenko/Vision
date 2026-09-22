@@ -3,7 +3,8 @@
 Phase 1 is deliberately the smallest thing that works -- a plain synchronous
 call, once per detection, with no rules, no filtering beyond the class name and
 no debouncing. Phase 2 layers rule evaluation and debouncing on top of this
-same bus without changing either signature.
+same bus without changing either signature: a rule reaches a handler through
+`call(name, detection)`, and `names()` lets the rules be checked at start-up.
 """
 
 from __future__ import annotations
@@ -56,8 +57,35 @@ def emit(detection: Detection) -> None:
     A handler that raises is logged and skipped: one broken user callback must
     not take down the detection loop or hide the detections behind it.
     """
-    for handler in _handlers.get(detection.cls_name, []) + _handlers.get(None, []):
-        try:
-            handler(detection)
-        except Exception:  # noqa: BLE001 -- user code, any failure is theirs
-            log.exception("handler %s failed on a %s detection", handler.__name__, detection.cls_name)
+    for handler in _subscribed(detection):
+        _run(handler, detection)
+
+
+def call(name: str, detection: Detection) -> None:
+    """Call only the handlers named `name` that are subscribed to this class.
+
+    This is how a rule's `call` action reaches user code: by function name,
+    with the same class filter as `emit`, so a handler registered for
+    `person` stays silent on a `cell phone` event. A raising handler is logged
+    and skipped, as in `emit`.
+    """
+    for handler in _subscribed(detection):
+        if handler.__name__ == name:
+            _run(handler, detection)
+
+
+def names() -> set[str]:
+    """The function names of every registered handler, whatever its class."""
+    return {handler.__name__ for handlers in _handlers.values() for handler in handlers}
+
+
+def _subscribed(detection: Detection) -> list[Handler]:
+    """Handlers for this detection's class first, then the catch-alls."""
+    return _handlers.get(detection.cls_name, []) + _handlers.get(None, [])
+
+
+def _run(handler: Handler, detection: Detection) -> None:
+    try:
+        handler(detection)
+    except Exception:  # noqa: BLE001 -- user code, any failure is theirs
+        log.exception("handler %s failed on a %s detection", handler.__name__, detection.cls_name)

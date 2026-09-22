@@ -59,6 +59,18 @@ class BenchConfig:
 
 
 @dataclass
+class TrackerConfig:
+    track_buffer: int
+    match_thresh: float
+    fuse_score: bool
+
+
+@dataclass
+class RulesConfig:
+    file: str
+
+
+@dataclass
 class Config:
     model: ModelConfig
     classes: list[str]
@@ -66,6 +78,8 @@ class Config:
     output: OutputConfig
     capture: CaptureConfig
     bench: BenchConfig
+    tracker: TrackerConfig
+    rules: RulesConfig
 
 
 _SECTIONS = {
@@ -74,6 +88,8 @@ _SECTIONS = {
     "output": OutputConfig,
     "capture": CaptureConfig,
     "bench": BenchConfig,
+    "tracker": TrackerConfig,
+    "rules": RulesConfig,
 }
 
 
@@ -115,6 +131,10 @@ _RULES: dict[str, tuple[type, Any]] = {
     "capture.interval": (float, _non_negative),
     "bench.runs": (int, _positive),
     "bench.warmup": (int, _non_negative),
+    "tracker.track_buffer": (int, _positive),
+    "tracker.match_thresh": (float, _unit_interval),
+    "tracker.fuse_score": (bool, None),
+    "rules.file": (str, _non_empty),
 }
 
 _RANGE_TEXT = {

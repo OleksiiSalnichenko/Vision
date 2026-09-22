@@ -1,7 +1,8 @@
 # The single place for every number, threshold and path in this project.
 # Schema: ARCHITECTURE.md section 9, plus the keys this project adds --
-# display.center_line, capture.camera, capture.count, capture.interval and the
-# whole bench section. The schema itself lives in core/config.py; a key added
+# display.center_line, capture.camera, capture.count, capture.interval, the
+# whole bench section, and the phase-2 tracker and rules sections. The schema
+# itself lives in core/config.py; a key added
 # here without a rule there (or the other way round) is an error, not a default.
 
 model:
@@ -38,3 +39,11 @@ capture:
 bench:
   runs: 10              # measured passes over the source
   warmup: 3             # discarded passes: the first inference is always slower
+
+tracker:
+  track_buffer: 30      # frames a lost track is kept before its id is retired
+  match_thresh: 0.8     # IoU-based association threshold used by ByteTrack
+  fuse_score: true      # blend detection score into the association cost
+
+rules:
+  file: rules.yaml      # conditions, actions and debouncing for streams
