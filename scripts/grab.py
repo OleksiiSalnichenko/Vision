@@ -29,20 +29,11 @@ if str(PROJECT_ROOT) not in sys.path:  # run as a script, not an installed packa
 
 from detect import CONFIG_PATH, EXIT_USAGE, configure_console  # noqa: E402
 
-from core.config import Config, load_config  # noqa: E402
+from core.config import load_config  # noqa: E402
+from core.source import open_camera  # noqa: E402  (also quiets OpenCV's own warnings)
 
 IMAGES_DIR = PROJECT_ROOT / "data" / "test_images"
 IMAGE_FORMAT = ".jpg"
-
-# DirectShow opens in well under a second on Windows; the default Media
-# Foundation backend can take ten and sometimes never reports a missing camera
-# as missing. Elsewhere OpenCV's own choice is the right one.
-BACKEND = cv2.CAP_DSHOW if sys.platform == "win32" else cv2.CAP_ANY
-
-# A camera index nobody is plugged into makes the backend log a warning of its
-# own before returning a closed capture. The sentence below says the same thing
-# in one line, and two messages for one problem read like two problems.
-cv2.utils.logging.setLogLevel(cv2.utils.logging.LOG_LEVEL_ERROR)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -76,22 +67,6 @@ def _whole(text: str, minimum: int) -> int:
     if value < minimum:
         raise argparse.ArgumentTypeError(f"must be at least {minimum}: {text}")
     return value
-
-
-def open_camera(index: int, cfg: Config) -> cv2.VideoCapture:
-    """Open one camera at the configured resolution.
-
-    Raises `OSError` naming the index when the camera is missing or held by
-    another program -- the two cases look identical from here, and the sentence
-    says so rather than guessing.
-    """
-    capture = cv2.VideoCapture(index, BACKEND)
-    capture.set(cv2.CAP_PROP_FRAME_WIDTH, cfg.capture.width)
-    capture.set(cv2.CAP_PROP_FRAME_HEIGHT, cfg.capture.height)
-    if not capture.isOpened():
-        capture.release()
-        raise OSError(f"camera {index} is not available or is in use by another program")
-    return capture
 
 
 def grab(capture: cv2.VideoCapture, index: int, count: int, interval: float) -> list[Path]:
