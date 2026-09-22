@@ -13,6 +13,7 @@ from the spec -- draw and print at `conf` 0.5, keep down to `conf_debug` 0.25.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 from pathlib import Path
 
@@ -20,6 +21,7 @@ import numpy as np
 import pytest
 
 import detect
+from core import events
 from core.config import load_config
 from core.types import Detection, Frame
 
@@ -115,3 +117,167 @@ def test_conf_flag_above_conf_debug_leaves_the_lower_threshold_alone(cfg):
 
     assert raised.model.conf == 0.70
     assert raised.model.conf_debug == CONF_DEBUG
+
+
+# --- streams ---------------------------------------------------------------
+#
+# `run_stream` is driven by a stand-in source that yields five synthetic frames
+# and says it is a stream. No camera is opened, no window is shown and no model
+# is loaded; ByteTrack itself is real, because it is not a model.
+
+FRAMES = 5
+FRAME_W, FRAME_H = 80, 60
+STREAM_NAME = "clip.mp4"  # not a file on disk: nothing here is a real video
+
+APPEARED_RULES = """
+debounce:
+  confirm_frames: 2
+  cooldown: 100.0
+rules:
+  - name: person_appeared
+    when: appeared
+    class: person
+    do: [log]
+"""
+
+CALL_RULES = """
+debounce:
+  confirm_frames: 2
+  cooldown: 100.0
+rules:
+  - name: person_appeared
+    when: appeared
+    class: person
+    do: [{call: greet}]
+"""
+
+GREETING_HANDLERS = """
+from core.events import on_detect
+
+
+@on_detect(cls="person")
+def greet(detection):
+    print(f"greet saw {detection.cls_name}")
+"""
+
+
+class StubSource:
+    """Five black frames, 0.1 s apart, from something that calls itself a stream."""
+
+    is_stream = True
+    fps = 10.0
+    frame_size = (FRAME_W, FRAME_H)
+
+    def __iter__(self):
+        for index in range(FRAMES):
+            yield Frame(
+                image=np.zeros((FRAME_H, FRAME_W, 3), np.uint8),
+                source=STREAM_NAME,
+                index=index,
+                time=index / self.fps,
+            )
+
+    def __len__(self) -> int:
+        return FRAMES
+
+
+@pytest.fixture(autouse=True)
+def empty_event_bus():
+    """The bus is module state; no test may leave a handler behind."""
+    events.clear()
+    yield
+    events.clear()
+
+
+@pytest.fixture
+def stream_cfg(tmp_path, write_config):
+    """Returns a config whose rules file holds `rules_text`, output in `tmp_path`."""
+
+    def build(rules_text: str):
+        rules = tmp_path / "rules.yaml"
+        rules.write_text(rules_text, encoding="utf-8")
+        return load_config(
+            write_config(
+                {
+                    "model.conf": CONF,
+                    "model.conf_debug": CONF_DEBUG,
+                    "classes": [],
+                    "output.save_json": True,
+                    "output.save_image": False,
+                    "output.dir": tmp_path.as_posix(),
+                    "rules.file": rules.as_posix(),
+                }
+            )
+        )
+
+    return build
+
+
+def stream_args() -> argparse.Namespace:
+    return argparse.Namespace(source=STREAM_NAME, color=False, no_window=True)
+
+
+def sure_and_near_miss() -> StubDetector:
+    person = detection("person", 0.90)
+    bottle = dataclasses.replace(detection("bottle", 0.30), bbox=(50.0, 30.0, 70.0, 50.0))
+    return StubDetector([person, bottle])
+
+
+def run(cfg) -> int:
+    return detect.run_stream(
+        StubSource(), sure_and_near_miss(), cfg, stream_args(), detect.Window(enabled=False, stream=True)
+    )
+
+
+def test_stream_writes_a_line_per_frame_and_prints_only_events(stream_cfg, tmp_path, capsys):
+    heard = []
+    events.on_detect()(heard.append)  # a catch-all: emit would reach it
+
+    code = run(stream_cfg(APPEARED_RULES))
+
+    assert code == 0
+    lines = (tmp_path / "clip.jsonl").read_text(encoding="utf-8").splitlines()
+    assert len(lines) == FRAMES
+    rows = [json.loads(line) for line in lines]
+    assert [row["index"] for row in rows] == list(range(FRAMES))
+    for row in rows:
+        assert [(d["cls_name"], d["debug"]) for d in row["detections"]] == [
+            ("person", False),
+            ("bottle", True),
+        ]
+    printed = capsys.readouterr().out.splitlines()
+    assert len([line for line in printed if "person_appeared" in line]) == 1
+    assert not any("bottle" in line for line in printed)  # a near miss is never printed
+    assert printed[-1].startswith(f"{FRAMES} frames, 1 events, wrote ")
+    assert len(printed) == 2  # the event and the summary, nothing per frame
+    assert heard == []  # on a stream the bus hears rules only, never emit
+
+
+def test_a_call_action_runs_the_function_from_the_handlers_file(
+    stream_cfg, tmp_path, capsys, monkeypatch
+):
+    handlers = tmp_path / "handlers.py"
+    handlers.write_text(GREETING_HANDLERS, encoding="utf-8")
+    monkeypatch.setattr(detect, "HANDLERS_PATH", handlers)
+
+    code = run(stream_cfg(CALL_RULES))
+
+    assert code == 0
+    printed = capsys.readouterr().out.splitlines()
+    assert printed.count("greet saw person") == 1  # once: the rule fires once per track
+    assert events.names() == set()  # the handlers are unhooked when the stream ends
+
+
+def test_a_call_to_a_function_nobody_registered_stops_the_run(
+    stream_cfg, tmp_path, capsys, monkeypatch
+):
+    handlers = tmp_path / "handlers.py"
+    handlers.write_text("# no functions here\n", encoding="utf-8")
+    monkeypatch.setattr(detect, "HANDLERS_PATH", handlers)
+
+    code = run(stream_cfg(CALL_RULES))
+
+    assert code == detect.EXIT_USAGE
+    captured = capsys.readouterr()
+    assert captured.err.strip() == "unknown handler in rules.yaml: greet"
+    assert not (tmp_path / "clip.jsonl").exists()  # stopped before the first frame

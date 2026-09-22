@@ -10,6 +10,12 @@ prints one line per object. That offset is what a pan-tilt camera will be
 steered with later; phase 1 exists to prove it is computed correctly on your
 own photos.
 
+Phase 2 does the same on a video file or a live webcam: every object keeps a
+number from frame to frame, one of them is the *target* (the nearest to the
+centre, or the one you click), and `rules.yaml` turns "a person appeared" or
+"a phone entered the door zone" into a printed line, a saved frame or a call
+into your own Python function.
+
 Everything runs offline on the CPU. The network is touched in exactly two
 places: `pip install` and `scripts/fetch_models.py`. Nothing else in the
 project is allowed to reach it -- including Ultralytics, whose usage analytics
@@ -32,6 +38,16 @@ venv\Scripts\python -c "import torch, cv2, ultralytics"
 ```
 
 The last command printing nothing is the whole success criterion.
+
+Two packages in `requirements.txt` are there for phase 2:
+
+- `lap` -- the assignment solver ByteTrack uses to match boxes between frames.
+  Without it Ultralytics tries to install it at run time, which this project
+  forbids (no network after install).
+- `openvino==2026.3.1` -- Intel's CPU inference runtime, for the faster model
+  format below. It is pinned: 2026.4.0 sees this laptop's integrated GPU,
+  Ultralytics then picks the GPU on its own and the process crashes
+  (`0xC0000005`) while compiling for it. 2026.3.1 stays on the CPU.
 
 Then fetch the weights and the stock test photo. This is the one online step,
 and the last one:
@@ -85,7 +101,7 @@ venv\Scripts\python detect.py --source data/test_images/bus.jpg --no-window --co
 
 | Flag | Does |
 |---|---|
-| `--source PATH` | an image file or a folder of images (required) |
+| `--source PATH` | an image, a folder of images, a video file, or `camera:N` (required) |
 | `--conf FLOAT` | confidence threshold for drawing and printing, `0..1`; overrides `model.conf`, and pulls `model.conf_debug` down with it when you set it lower, because nothing under `conf_debug` ever leaves the model |
 | `--classes NAME [NAME ...]` | class whitelist; overrides the `classes` list in the config |
 | `--color` | name the dominant colour of each drawn object (loads scikit-learn, so it is slower) |
@@ -113,6 +129,174 @@ venv\Scripts\python scripts\grab.py --camera 0 --count 5
 
 Point `detect.py --source data/test_images` at the folder afterwards.
 
+## Video and webcam
+
+A video file (`.mp4`, `.avi`, `.mov`, `.mkv`, `.webm`, `.m4v`):
+
+```
+venv\Scripts\python detect.py --source clip.mp4
+```
+
+The webcam (`camera:0` is the first one; a bare `0` works too):
+
+```
+venv\Scripts\python detect.py --source camera:0
+```
+
+The window plays live. `q` or `Esc` stops, and so does Ctrl+C in the
+terminal; a video file also stops on its own at the end. With `--no-window` a
+file runs to the end and a camera runs until Ctrl+C. `--conf`, `--classes` and
+`--color` work as on photos (`--color` on every frame is slow).
+
+What you see on each frame:
+
+- `#7` in every label -- the track number. ByteTrack keeps it on the same
+  object across frames (why ByteTrack: no extra model to download, and it uses
+  the low-confidence boxes to keep a track alive through a dim frame). A new
+  object gets its number from its second frame on.
+- The **target**: a thick magenta box marked `TARGET`. Without a click it is
+  the tracked object nearest the centre of the frame.
+- **Left-click a box to lock the target onto it**, even when something else is
+  closer to the centre. Click empty space to release the lock. If the locked
+  object leaves the frame the target reads `lost` and nothing else is picked
+  up; after `tracker.track_buffer` frames the lock is dropped.
+- The top line: `target #7 person  dx +120 dy -40  ->  12.3 FPS` -- the target,
+  the arrow a pan-tilt head would turn along (`core/aim.py`, a stub for now),
+  and the processing speed.
+
+The console prints nothing per frame -- only rule events (below) and one
+summary line at the end: `49 frames, 6 events, wrote out\clip.jsonl,
+out\clip_annotated.mp4`. Warnings and errors go to stderr.
+
+Files written to `out\`:
+
+| File | When | Holds |
+|---|---|---|
+| `<name>.jsonl` | `output.save_json` | one JSON line per frame: `source`, `index`, `time` (seconds from the start), `target` (`{"track_id", "locked", "lost"}` or `null`), `detections` with `track_id`; near-misses carry `"debug": true` |
+| `<name>_annotated.mp4` | `output.save_image`, video files only | the overlay at the source's frame rate |
+| `events\<name>_<rule>_<frame>.jpg` | a rule's `save_frame` action | the annotated frame the rule fired on |
+
+JSON Lines rather than one JSON file: each line is flushed as soon as the frame
+is done, so a run stopped with Ctrl+C or by a camera failure still leaves every
+frame up to the last one. A webcam writes no video -- it would grow without
+limit -- and its files are named `camera_0.*`.
+
+## Rules
+
+`rules.yaml` (path set by `rules.file` in `config.yaml`) says what counts as
+an event on a video or webcam. Photos ignore it: a single frame has no "before"
+to compare with.
+
+```yaml
+debounce:
+  confirm_frames: 3     # consecutive frames before a change counts
+  cooldown: 5.0         # seconds a (rule, object) pair stays quiet after firing
+zones:
+  door: [0.0, 0.0, 0.3, 1.0]   # x1, y1, x2, y2 as fractions of the frame
+rules:
+  - name: person_appeared
+    when: appeared
+    class: person       # optional; leave it out for any class
+    do: [log]
+  - name: phone_at_door
+    when: entered
+    zone: door
+    class: cell phone
+    do: [log, save_frame, {call: on_phone}]
+```
+
+Conditions (`when`), each firing once per tracked object:
+
+| `when` | Fires when |
+|---|---|
+| `appeared` | a new object has been seen `confirm_frames` frames in a row |
+| `disappeared` | a known object has been missing `confirm_frames` frames in a row |
+| `present` | an object has stayed in view `seconds: N` seconds (stream time, not wall clock) |
+| `entered` | an object's centre has been inside `zone:` for `confirm_frames` frames after being outside it; an object first seen inside the zone counts too |
+
+Actions (`do`), in the order listed:
+
+| Action | Does |
+|---|---|
+| `log` | prints `[00:12.4] person_appeared  person #7 0.83  dx +120 dy -40` |
+| `save_frame` | writes the annotated frame to `out\events\` |
+| `{call: name}` | calls the function `name` from `handlers.py` |
+
+Why the debounce: the model's confidence wobbles between frames, and an object
+hovering at 0.49 / 0.51 would otherwise "appear" and "disappear" dozens of
+times a second. `confirm_frames` makes a change prove itself first, and
+`cooldown` keeps the same rule quiet on the same object for a while after it
+fired. Zones are fractions of the frame (`0..1`), not pixels, so one file works
+for a 640x480 webcam and a 4K video alike. Rules only see what is drawn -- at
+or above `model.conf`, with a track number.
+
+A broken `rules.yaml` stops the run with one sentence naming the rule and key,
+exit code 2.
+
+## Your own code: `handlers.py`
+
+`handlers.py` in the project root holds the functions rules can call. Register
+one with `@on_detect` and call it by its function name:
+
+```python
+from core.events import on_detect
+
+@on_detect(cls="cell phone")    # leave out cls to accept every class
+def on_phone(detection):
+    print(f"phone #{detection.track_id} at dx {detection.dx:+d}")
+```
+
+```yaml
+    do: [{call: on_phone}]
+```
+
+The function gets the `Detection` that made the rule fire (`cls_name`, `conf`,
+`bbox`, `center`, `dx`, `dy`, `dx_pct`, `dy_pct`, `track_id`). A rule calling a
+name `handlers.py` does not define stops the run at start-up: `unknown handler
+in rules.yaml: <name>`, exit code 2. A rule whose `class` the handler's `cls`
+can never match gets one warning at start-up. A function that raises is logged
+and skipped. On a stream your functions run only through rules -- never once
+per frame -- so they fire at the rate of events, not at 25 times a second.
+
+## Faster inference: OpenVINO
+
+OpenVINO is Intel's runtime for running a model on an Intel CPU. Export the
+model once (offline, no download):
+
+```
+venv\Scripts\python scripts\export_openvino.py
+```
+
+It writes `models\yolo26n_openvino_model\`; running it again prints `skip`,
+`--force` rewrites it, `--weights models/yolo26s.pt` exports the other model.
+Then switch with one line of `config.yaml`:
+
+```yaml
+model:
+  weights: models/yolo26n_openvino_model
+```
+
+Nothing else changes. Compare both on your own machine:
+
+```
+venv\Scripts\python bench.py --source data/test_images/bus.jpg --weights models/yolo26n.pt models/yolo26n_openvino_model
+```
+
+Measured on this laptop (4-core Intel U-series CPU, `bus.jpg`, 3 warm-up + 10
+measured passes, openvino 2026.3.1):
+
+| Weights | Seconds per frame | FPS |
+|---|---|---|
+| `yolo26n.pt` (PyTorch) | 0.0791 | 12.65 |
+| `yolo26n_openvino_model` | 0.0514 | 19.45 |
+| **Speed-up** | | **1.54x** |
+
+That is less than the 2-3x `ARCHITECTURE.md` estimated: here it is about
+1.5x (1.65x on a 20-pass run), and single runs vary by up to 30% on a
+4-core laptop CPU. Both formats find the same four people on `bus.jpg`, with
+boxes within 7 px of each other. The default stays `.pt` so a fresh clone
+works without the export step.
+
 ## Config
 
 `config.yaml` is the single source of every number, threshold and path. There
@@ -122,7 +306,7 @@ value quietly filled in somewhere. Adding a knob means adding it to
 
 | Key | Meaning |
 |---|---|
-| `model.weights` | path to the `.pt` file, resolved from the working directory |
+| `model.weights` | path to the `.pt` file or the exported OpenVINO folder, resolved from the working directory |
 | `model.imgsz` | inference size; 640 is what YOLO26 was trained at |
 | `model.conf` | threshold for drawing, printing and events |
 | `model.conf_debug` | lower threshold; what lands between the two is written to the JSON with `"debug": true` and is never drawn or printed. The band is empty when the two thresholds meet, so `--conf 0.25` or lower leaves no `"debug": true` entry in the file at all -- the flag drags `conf_debug` down with it |
@@ -131,15 +315,23 @@ value quietly filled in somewhere. Adding a knob means adding it to
 | `display.show_offsets` | `dx / dy` inside each box |
 | `display.crosshair` | red crosshair at the centre of the frame |
 | `display.center_line` | line from the frame centre to each object centre |
-| `output.save_json` | write `out\<name>.json` |
-| `output.save_image` | write `out\<name>_annotated.jpg` |
-| `output.dir` | where both of them go |
-| `capture.width`, `capture.height` | resolution `scripts/grab.py` asks the camera for |
+| `output.save_json` | write `out\<name>.json` (photos) or `out\<name>.jsonl` (streams) |
+| `output.save_image` | write `out\<name>_annotated.jpg` (photos) or `out\<name>_annotated.mp4` (video files) |
+| `output.dir` | where all of them go |
+| `capture.width`, `capture.height` | resolution the webcam is asked for, by `detect.py` and `scripts/grab.py`; a camera that delivers another size gets one warning |
 | `capture.camera` | camera index it opens by default |
 | `capture.count` | frames it saves per run |
 | `capture.interval` | seconds between saved frames |
 | `bench.runs` | measured passes in `bench.py` |
 | `bench.warmup` | passes discarded before measuring |
+| `tracker.track_buffer` | frames a vanished object keeps its track number (and a click lock) before it is forgotten |
+| `tracker.match_thresh` | how closely a box must overlap a track's predicted position to continue it |
+| `tracker.fuse_score` | let the detection's confidence count when matching boxes to tracks |
+| `rules.file` | the rules file, resolved from the project root |
+
+The tracker's confidence bands are not separate knobs: it follows `model.conf`
+and `model.conf_debug` (and so `--conf`), which is why a near-miss can keep a
+track alive but never starts one.
 
 Switching to the bigger model is one line -- `model.weights:
 models/yolo26s.pt` -- and nothing else changes.
@@ -153,16 +345,33 @@ archive.
 not on disk. Run that script. Nothing downloads weights on its own: a model
 that silently fetches itself is the one thing this project refuses to do.
 
-**`source not found: ...` or `not an image: ...`, exit code 2** -- the path is
+**`source not found: ...` or `not an image or video: ...`, exit code 2** -- the path is
 wrong or the extension is not one OpenCV decodes (`.jpg`, `.jpeg`, `.png`,
 `.bmp`, `.webp`, `.tif`, `.tiff`).
 
 **`config key ... must be ...` or `missing config key: ...`** -- `config.yaml`
 is malformed and the message names the key. There is no fallback value.
 
-**`camera 0 is not available or is in use by another program`, exit code 2** --
-something else holds the webcam (a video call, the Camera app), or the index is
-wrong. Close the other program, or try `--camera 1`.
+**`camera 0 is not available or busy`, exit code 2** -- something else holds
+the webcam (a video call, the Camera app), or the index is wrong. Close the
+other program, or try `camera:1` (`--camera 1` for `scripts/grab.py`).
+
+**`camera 0 stopped delivering frames`, exit code 1** -- the webcam was
+unplugged or taken over mid-run. The JSONL is closed and whole up to the last
+frame, and the summary line still says what was written.
+
+**`cannot open video: ...`, exit code 2** -- the file is damaged, empty or in a
+codec OpenCV cannot read. FFmpeg may print a line of its own before it
+(`moov atom not found`); it is the same problem.
+
+**`run scripts/export_openvino.py first`, exit code 2** -- `model.weights`
+points at an OpenVINO folder that has not been exported yet.
+
+**`rules file not found: ...` or `rules[<name>].<key>: ...`, exit code 2** --
+`rules.yaml` is missing or malformed; the message names the rule and key.
+
+**`unknown handler in rules.yaml: <name>`, exit code 2** -- a rule says
+`{call: <name>}` but `handlers.py` registers no function by that name.
 
 **The window does not open, or you are on a machine with no display** -- use
 `--no-window`. If `cv2.imshow` fails anyway, the run says so once on stderr and
