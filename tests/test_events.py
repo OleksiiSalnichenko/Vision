@@ -109,6 +109,24 @@ def test_names_is_empty_after_clear():
     assert events.names() == set()
 
 
+def test_subscriptions_lists_the_classes_a_named_handler_listens_to():
+    @events.on_detect(cls="person")
+    def greet(det):
+        pass
+
+    @events.on_detect(cls="cell phone")
+    def greet(det):  # noqa: F811 -- same name on purpose: one name, two classes
+        pass
+
+    @events.on_detect()
+    def wave(det):
+        pass
+
+    assert events.subscriptions("greet") == {"person", "cell phone"}
+    assert events.subscriptions("wave") == {None}  # None: every class
+    assert events.subscriptions("on_phone") == set()
+
+
 def test_emit_still_reaches_every_subscribed_handler_whatever_its_name():
     seen = []
 

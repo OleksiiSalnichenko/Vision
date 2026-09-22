@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 
 import bench
+import core.source
 
 EXIT_USAGE = 2
 STILLS_ONLY_MESSAGE = "bench.py measures still images: pass an image or a folder"
@@ -32,9 +33,16 @@ def image(tmp_path):
     return path
 
 
+def camera_trap(*args, **kwargs):
+    raise AssertionError("bench.py opened a source it should have refused by its path")
+
+
 @pytest.mark.parametrize("source", ["clip.mp4", "camera:0", "0"])
 def test_a_stream_source_is_a_usage_error(tmp_path, capsys, monkeypatch, source):
     monkeypatch.setattr(bench, "Detector", StubDetector)
+    # A regression here must fail the test, not switch the user's webcam on.
+    monkeypatch.setattr(bench, "Source", camera_trap)
+    monkeypatch.setattr(core.source, "open_camera", camera_trap)
     if source.endswith(".mp4"):
         (tmp_path / source).write_bytes(b"not really a video")
         source = str(tmp_path / source)

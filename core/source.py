@@ -47,9 +47,15 @@ cv2.utils.logging.setLogLevel(cv2.utils.logging.LOG_LEVEL_ERROR)
 class Source:
     """An iterable of `Frame`s over an image, a folder, a video or a webcam.
 
-    `is_stream` is True for a video file and a webcam. `fps` is the rate the
-    container or camera reports, and 0 for stills. `frame_size` is the actual
-    `(w, h)` of a stream's frames and None for stills.
+    `is_stream` is True for a video file and a webcam; `is_camera` for a webcam
+    only. `fps` is the rate the container or camera reports, and 0 for stills.
+    `frame_size` is the actual `(w, h)` of a stream's frames and None for stills.
+
+    A webcam is held from the constructor on, so the source is a context
+    manager: `close()` (or leaving the `with` block) releases the camera on
+    every path out, rather than whenever the garbage collector gets to it. It
+    is idempotent, and does nothing for stills and video files, which hold
+    nothing between iterations.
     """
 
     def __init__(self, spec: str | Path, cfg: Config) -> None:
@@ -62,6 +68,7 @@ class Source:
         self._camera: int | None = None
         self._capture: cv2.VideoCapture | None = None
         self.is_stream = False
+        self.is_camera = False
         self.fps = 0.0
         self.frame_size: tuple[int, int] | None = None
 
@@ -72,6 +79,20 @@ class Source:
             self._probe_video()
         else:
             self._paths = self._resolve()
+
+    def __enter__(self) -> Source:
+        return self
+
+    def __exit__(self, *exc_info: object) -> bool:
+        self.close()
+        return False
+
+    def close(self) -> None:
+        """Release the camera now. Safe to call again, and on any source."""
+        capture, self._capture = self._capture, None
+        if capture is not None:
+            capture.release()
+            log.debug("camera %d released", self._camera)
 
     def _resolve(self) -> list[Path]:
         """List the images this source will yield, in the order it yields them."""
@@ -123,6 +144,7 @@ class Source:
         self._camera = index
         self._capture = capture
         self.is_stream = True
+        self.is_camera = True
         self.fps = max(0.0, float(capture.get(cv2.CAP_PROP_FPS)))
         self.frame_size = (width, height)
 
@@ -170,14 +192,19 @@ class Source:
         """Frames until the caller stops; the camera is released either way.
 
         The capture was opened in the constructor and is used once: a second
-        iteration finds it released and reports the camera as stopped.
+        iteration, or one after `close()`, is a `RuntimeError` -- the camera
+        itself did nothing wrong, so it is not reported as stopped.
         """
         capture = self._capture
+        if capture is None:
+            raise RuntimeError(f"source already consumed: camera {self._camera}")
         source = f"{CAMERA_PREFIX}{self._camera}"
         try:
             start = None
             index = 0
             while True:
+                if self._capture is None:
+                    return  # closed by the owner between two frames
                 ok, image = capture.read()
                 if not ok or image is None:
                     raise OSError(f"camera {self._camera} stopped delivering frames")
@@ -187,7 +214,7 @@ class Source:
                 yield Frame(image=image, source=source, index=index, time=now - start)
                 index += 1
         finally:
-            capture.release()
+            self.close()
 
 
 def open_camera(index: int, cfg: Config) -> cv2.VideoCapture:
@@ -206,6 +233,20 @@ def open_camera(index: int, cfg: Config) -> cv2.VideoCapture:
         capture.release()
         raise OSError(f"camera {index} is not available or busy")
     return capture
+
+
+def is_stream_spec(spec: str | Path) -> bool:
+    """Whether `Source(spec, cfg)` would be a stream, decided without opening it.
+
+    True for `camera:N` (or a bare index) and for an existing video file. Lets
+    a caller check what only a stream needs before a camera is switched on.
+    Raises `ValueError` for a `camera:` prefix without a whole number, as the
+    constructor would.
+    """
+    if _camera_index(spec) is not None:
+        return True
+    path = Path(spec)
+    return path.is_file() and _is_video(path)
 
 
 def _camera_index(spec: str | Path) -> int | None:

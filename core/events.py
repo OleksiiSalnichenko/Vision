@@ -4,7 +4,8 @@ Phase 1 is deliberately the smallest thing that works -- a plain synchronous
 call, once per detection, with no rules, no filtering beyond the class name and
 no debouncing. Phase 2 layers rule evaluation and debouncing on top of this
 same bus without changing either signature: a rule reaches a handler through
-`call(name, detection)`, and `names()` lets the rules be checked at start-up.
+`call(name, detection)`, and `names()` and `subscriptions(name)` let the rules
+be checked at start-up.
 """
 
 from __future__ import annotations
@@ -77,6 +78,20 @@ def call(name: str, detection: Detection) -> None:
 def names() -> set[str]:
     """The function names of every registered handler, whatever its class."""
     return {handler.__name__ for handlers in _handlers.values() for handler in handlers}
+
+
+def subscriptions(name: str) -> set[str | None]:
+    """The classes the handlers named `name` listen to; None means every class.
+
+    Empty when nothing by that name is registered. Lets a rule on one class be
+    checked at start-up against a handler that only ever hears another.
+    """
+    return {
+        cls
+        for cls, handlers in _handlers.items()
+        for handler in handlers
+        if handler.__name__ == name
+    }
 
 
 def _subscribed(detection: Detection) -> list[Handler]:

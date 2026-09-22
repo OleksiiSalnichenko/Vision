@@ -165,6 +165,7 @@ class StubSource:
     """Five black frames, 0.1 s apart, from something that calls itself a stream."""
 
     is_stream = True
+    is_camera = False
     fps = 10.0
     frame_size = (FRAME_W, FRAME_H)
 
@@ -190,27 +191,31 @@ def empty_event_bus():
 
 
 @pytest.fixture
-def stream_cfg(tmp_path, write_config):
-    """Returns a config whose rules file holds `rules_text`, output in `tmp_path`."""
+def stream_config(tmp_path, write_config):
+    """Returns the path of a config whose rules file holds `rules_text`, output in `tmp_path`."""
 
-    def build(rules_text: str):
+    def build(rules_text: str) -> Path:
         rules = tmp_path / "rules.yaml"
         rules.write_text(rules_text, encoding="utf-8")
-        return load_config(
-            write_config(
-                {
-                    "model.conf": CONF,
-                    "model.conf_debug": CONF_DEBUG,
-                    "classes": [],
-                    "output.save_json": True,
-                    "output.save_image": False,
-                    "output.dir": tmp_path.as_posix(),
-                    "rules.file": rules.as_posix(),
-                }
-            )
+        return write_config(
+            {
+                "model.conf": CONF,
+                "model.conf_debug": CONF_DEBUG,
+                "classes": [],
+                "output.save_json": True,
+                "output.save_image": False,
+                "output.dir": tmp_path.as_posix(),
+                "rules.file": rules.as_posix(),
+            }
         )
 
     return build
+
+
+@pytest.fixture
+def stream_cfg(stream_config):
+    """Returns a loaded config whose rules file holds `rules_text`, output in `tmp_path`."""
+    return lambda rules_text: load_config(stream_config(rules_text))
 
 
 def stream_args() -> argparse.Namespace:
@@ -281,3 +286,164 @@ def test_a_call_to_a_function_nobody_registered_stops_the_run(
     captured = capsys.readouterr()
     assert captured.err.strip() == "unknown handler in rules.yaml: greet"
     assert not (tmp_path / "clip.jsonl").exists()  # stopped before the first frame
+
+
+# --- the camera is released on every way out -------------------------------
+#
+# Driven through `main`, as a user runs it: `Source` and `Detector` are replaced
+# by stand-ins, so no camera, window or model is ever opened. The spec names
+# camera 9, an index nobody has plugged in, should a stand-in ever be bypassed.
+
+CAMERA = "camera:9"
+
+SAVE_FRAME_RULES = """
+debounce:
+  confirm_frames: 2
+  cooldown: 100.0
+rules:
+  - name: person_appeared
+    when: appeared
+    class: person
+    do: [save_frame]
+"""
+
+BROKEN_RULES = """
+debounce:
+  confirm_frames: 2
+  cooldown: 100.0
+rules:
+  - name: person_appeared
+    when: sometimes
+    do: [log]
+"""
+
+
+class CameraStub:
+    """A webcam stand-in: `frames` black frames, then `error` if one is given."""
+
+    is_stream = True
+    is_camera = True
+    fps = 10.0
+    frame_size = (FRAME_W, FRAME_H)
+
+    def __init__(self, frames: int, error: BaseException | None = None) -> None:
+        self._frames = frames
+        self._error = error
+        self.closes = 0
+
+    def __iter__(self):
+        for index in range(self._frames):
+            yield Frame(
+                image=np.zeros((FRAME_H, FRAME_W, 3), np.uint8),
+                source=CAMERA,
+                index=index,
+                time=index / self.fps,
+            )
+        if self._error is not None:
+            raise self._error
+
+    def __len__(self) -> int:
+        return 0
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        self.close()
+        return False
+
+    def close(self) -> None:
+        self.closes += 1
+
+
+def run_main(
+    monkeypatch, config_path: Path, camera: CameraStub, weights: bool = True
+) -> tuple[int, list[str]]:
+    """Run `detect.py --source camera:9 --no-window`; return the code and every spec opened.
+
+    `weights=True` stands in for weights on disk; False leaves the real check.
+    """
+    opened: list[str] = []
+
+    def open_source(spec, cfg):
+        opened.append(spec)
+        return camera
+
+    monkeypatch.setattr(detect, "CONFIG_PATH", config_path)
+    monkeypatch.setattr(detect, "Source", open_source)
+    monkeypatch.setattr(detect, "Detector", lambda cfg: sure_and_near_miss())
+    if weights:
+        monkeypatch.setattr(detect, "require_weights", lambda cfg: None)
+    return detect.main(["--source", CAMERA, "--no-window"]), opened
+
+
+def test_a_camera_that_stops_mid_stream_is_released_and_the_run_fails(
+    stream_config, tmp_path, capsys, monkeypatch
+):
+    camera = CameraStub(frames=2, error=OSError("camera 9 stopped delivering frames"))
+
+    code, _ = run_main(monkeypatch, stream_config(APPEARED_RULES), camera)
+
+    assert code == detect.EXIT_STREAM_FAILED
+    assert camera.closes > 0
+    captured = capsys.readouterr()
+    assert captured.err.strip() == "camera 9 stopped delivering frames"
+    assert captured.out.splitlines()[-1].startswith("2 frames, ")
+    [jsonl] = tmp_path.glob("*.jsonl")  # the writer was closed: both lines are there
+    assert len(jsonl.read_text(encoding="utf-8").splitlines()) == 2
+
+
+def test_ctrl_c_releases_the_camera_and_ends_the_run_cleanly(
+    stream_config, tmp_path, capsys, monkeypatch
+):
+    camera = CameraStub(frames=2, error=KeyboardInterrupt())
+
+    code, _ = run_main(monkeypatch, stream_config(APPEARED_RULES), camera)
+
+    assert code == 0
+    assert camera.closes > 0
+    assert capsys.readouterr().out.splitlines()[-1].startswith("2 frames, ")
+    [jsonl] = tmp_path.glob("*.jsonl")
+    assert len(jsonl.read_text(encoding="utf-8").splitlines()) == 2
+
+
+def test_a_file_that_cannot_be_written_is_a_usage_error_not_a_camera_failure(
+    stream_config, capsys, monkeypatch
+):
+    def refuse(*args, **kwargs):
+        raise OSError("could not encode image: out/events/camera_9_person_appeared_1.jpg")
+
+    monkeypatch.setattr(detect.output, "write_event_frame", refuse)
+    camera = CameraStub(frames=FRAMES)
+
+    code, _ = run_main(monkeypatch, stream_config(SAVE_FRAME_RULES), camera)
+
+    assert code == detect.EXIT_USAGE
+    assert camera.closes > 0
+    captured = capsys.readouterr()
+    assert captured.err.strip() == "could not encode image: out/events/camera_9_person_appeared_1.jpg"
+    assert " frames, " in captured.out.splitlines()[-1]
+
+
+def test_missing_weights_never_switch_the_camera_on(tmp_path, write_config, capsys, monkeypatch):
+    rules = tmp_path / "rules.yaml"
+    rules.write_text(APPEARED_RULES, encoding="utf-8")
+    config_path = write_config(
+        {"model.weights": (tmp_path / "absent.pt").as_posix(), "rules.file": rules.as_posix()}
+    )
+
+    code, opened = run_main(monkeypatch, config_path, CameraStub(frames=FRAMES), weights=False)
+
+    assert code == detect.EXIT_USAGE
+    assert opened == []
+    assert capsys.readouterr().err.strip() == "run scripts/fetch_models.py first"
+
+
+def test_a_broken_rules_file_never_switches_the_camera_on(stream_config, capsys, monkeypatch):
+    camera = CameraStub(frames=FRAMES)
+
+    code, opened = run_main(monkeypatch, stream_config(BROKEN_RULES), camera)
+
+    assert code == detect.EXIT_USAGE
+    assert opened == []
+    assert "person_appeared" in capsys.readouterr().err

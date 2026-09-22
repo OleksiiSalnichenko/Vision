@@ -45,9 +45,9 @@ import numpy as np
 
 from core import aim, draw, events, output
 from core.config import Config, load_config
-from core.detector import Detector, is_debug
+from core.detector import Detector, is_debug, require_weights
 from core.rules import CALL, RuleEngine, RuleSet, load_rules
-from core.source import Source
+from core.source import Source, is_stream_spec
 from core.target import Targeting, TargetState
 from core.tracker import Tracker
 from core.types import Detection, Frame
@@ -285,33 +285,49 @@ def run_images(source: Source, detector: Detector, cfg: Config, args: argparse.N
 
 
 def run_stream(source: Source, detector: Detector, cfg: Config, args: argparse.Namespace,
-               window: Window) -> int:
+               window: Window, rule_set: RuleSet | None = None) -> int:
     """A video file or a webcam: track, target, rules, JSONL, and events only.
 
     Returns 0 at the end of the file, on `q`/`Esc` and on Ctrl+C; 2 when the
-    rules cannot be used or the output cannot be written; 1 when the camera
-    stops delivering mid-run. Every path closes the files and prints the
-    summary line, so an interrupted run still leaves a whole JSONL and a
-    playable video.
+    rules cannot be used or a file cannot be written; 1 when the camera stops
+    delivering mid-run. Every path closes the files and prints the summary
+    line, so an interrupted run still leaves a whole JSONL and a playable video.
+
+    `rule_set` is the one `main` prepared before the camera was opened; given
+    none, the rules and handlers are loaded here and unhooked on the way out.
+    The source itself is closed by whoever opened it.
     """
-    hooked = False
-    try:
-        rule_set = load_rules(PROJECT_ROOT / cfg.rules.file)
-        if rule_set.calls():
-            hooked = True
-            _load_handlers(rule_set)
-    except (FileNotFoundError, ValueError) as err:
-        print(f"{err}", file=sys.stderr)
-        if hooked:
-            events.clear()
-        return EXIT_USAGE
+    owned = rule_set is None
+    if owned:
+        try:
+            rule_set = prepare_rules(cfg)
+        except (FileNotFoundError, ValueError) as err:
+            print(f"{err}", file=sys.stderr)
+            return EXIT_USAGE
 
     try:
         return _stream(source, detector, cfg, args, window, rule_set)
     finally:
-        if hooked:
+        if owned and rule_set.calls():
             # The registry is module state: the next stream loads the file anew.
             events.clear()
+
+
+def prepare_rules(cfg: Config) -> RuleSet:
+    """Load `rules.yaml` and, when a rule calls a function, `handlers.py`.
+
+    Raises `FileNotFoundError` or `ValueError` with one sentence; on a failure
+    the bus is left empty. On success the handlers stay registered, and the
+    caller clears the bus once the stream is over.
+    """
+    rule_set = load_rules(PROJECT_ROOT / cfg.rules.file)
+    if rule_set.calls():
+        try:
+            _load_handlers(rule_set)
+        except BaseException:
+            events.clear()
+            raise
+    return rule_set
 
 
 def _load_handlers(rule_set: RuleSet) -> None:
@@ -347,26 +363,12 @@ def _warn_unreachable(rule_set: RuleSet) -> None:
         for action in rule.actions:
             if not (isinstance(action, tuple) and action[0] == CALL):
                 continue
-            classes = _handler_classes(action[1])
+            classes = events.subscriptions(action[1])
             if None not in classes and rule.cls not in classes:
                 log.warning(
                     "rule %s is on %s, but %s only listens to %s; it will never run",
                     rule.name, rule.cls, action[1], ", ".join(sorted(classes)),
                 )
-
-
-def _handler_classes(name: str) -> set[str | None]:
-    """The classes the handlers named `name` subscribe to; None means every class.
-
-    `core.events` offers no public view of the class filter, so this reads its
-    registry directly.
-    """
-    return {
-        cls
-        for cls, handlers in events._handlers.items()  # noqa: SLF001
-        for handler in handlers
-        if handler.__name__ == name
-    }
 
 
 def _stream(source: Source, detector: Detector, cfg: Config, args: argparse.Namespace,
@@ -377,8 +379,8 @@ def _stream(source: Source, detector: Detector, cfg: Config, args: argparse.Name
     tracker = Tracker(cfg)
     targeting = Targeting(cfg)
     engine = RuleEngine(rule_set)
-    # A camera is never a file on disk; only a video file gets an .mp4 back.
-    is_video = Path(str(args.source)).is_file()
+    # Only a video file gets an .mp4 back; a camera's frames go to the JSONL.
+    is_video = not source.is_camera
 
     on_screen: list[Detection] = []  # the drawn detections of the frame shown now
     window.on_click(lambda point: targeting.click(point, on_screen))
@@ -387,8 +389,20 @@ def _stream(source: Source, detector: Detector, cfg: Config, args: argparse.Name
     ticks: deque[float] = deque(maxlen=_FPS_WINDOW)
     frames = fired = 0
     code = 0
+    incoming = iter(source)
     try:
-        for frame in source:
+        while True:
+            # Only reading a frame can mean the camera went away; a file that
+            # cannot be written is caught below, and said as such.
+            try:
+                frame = next(incoming)
+            except StopIteration:
+                break
+            except OSError as err:  # the camera stopped delivering frames
+                print(f"{err}", file=sys.stderr)
+                code = EXIT_STREAM_FAILED
+                break
+
             ticks.append(time.perf_counter())
             detections = tracker.update(frame, detector(frame))
             drawn = [item for item in detections if not is_debug(item, cfg)]
@@ -401,18 +415,19 @@ def _stream(source: Source, detector: Detector, cfg: Config, args: argparse.Name
             status = _status(target, _fps(ticks))
             canvas = draw.annotate(frame.image, drawn, cfg, target, status)
 
-            for event in engine.update(frame.time, drawn):
-                fired += 1
-                _act(event, frame, canvas, cfg)
-
-            if writer is None:
-                # Named after the first frame, so a bare `0` still writes camera_0.
-                writer = output.StreamWriter(
-                    frame.source, cfg, source.fps, source.frame_size or (width, height), is_video
-                )
             try:
+                for event in engine.update(frame.time, drawn):
+                    fired += 1
+                    _act(event, frame, canvas, cfg)
+
+                if writer is None:
+                    # Named after the first frame, so a bare `0` still writes camera_0.
+                    writer = output.StreamWriter(
+                        frame.source, cfg, source.fps, source.frame_size or (width, height),
+                        is_video,
+                    )
                 writer.write(frame, drawn, near_miss, target, canvas)
-            except OSError as err:
+            except OSError as err:  # a file that could not be written, named in err
                 print(f"{err}", file=sys.stderr)
                 code = EXIT_USAGE
                 break
@@ -423,10 +438,12 @@ def _stream(source: Source, detector: Detector, cfg: Config, args: argparse.Name
                 break
     except KeyboardInterrupt:
         pass  # Ctrl+C is how a camera run without a window is stopped
-    except OSError as err:  # the camera stopped delivering frames
-        print(f"{err}", file=sys.stderr)
-        code = EXIT_STREAM_FAILED
     finally:
+        # Ends the source's generator now, so a video file's capture is
+        # released here rather than whenever the garbage collector gets to it.
+        close_frames = getattr(incoming, "close", None)
+        if close_frames is not None:
+            close_frames()
         paths = writer.close() if writer is not None else []
         window.close()
         output.print_stream_summary(frames, fired, paths)
@@ -473,18 +490,46 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         cfg = with_overrides(load_config(CONFIG_PATH), args)
-        source = Source(args.source, cfg)
-        detector = Detector(cfg)
+        # What only a stream needs is checked before the source is opened: a
+        # broken rules.yaml or handlers.py must not switch the webcam on at all.
+        rule_set = prepare_rules(cfg) if is_stream_spec(args.source) else None
     except (FileNotFoundError, ValueError, OSError) as err:
         # One sentence, naming the path: a missing photo or a busy camera is
         # not a bug, and a traceback would bury the only line that matters.
         print(f"{err}", file=sys.stderr)
         return EXIT_USAGE
 
-    window = Window(enabled=not args.no_window, stream=source.is_stream)
-    if source.is_stream:
-        return run_stream(source, detector, cfg, args, window)
-    return run_images(source, detector, cfg, args, window)
+    try:
+        return _run(args, cfg, rule_set)
+    finally:
+        if rule_set is not None and rule_set.calls():
+            events.clear()  # the registry is module state; leave it as found
+
+
+def _run(args: argparse.Namespace, cfg: Config, rule_set: RuleSet | None) -> int:
+    """Open the source, load the model, and hand both to the right branch."""
+    try:
+        # Missing weights must not switch a webcam on only to switch it off.
+        require_weights(cfg)
+        source = Source(args.source, cfg)
+    except (FileNotFoundError, ValueError, OSError) as err:
+        print(f"{err}", file=sys.stderr)
+        return EXIT_USAGE
+
+    # A webcam is held from here on. The `with` releases it on every way out --
+    # the end, `q`/`Esc`, Ctrl+C, a failure, even a model that will not load --
+    # rather than whenever the garbage collector gets to it.
+    with source:
+        try:
+            detector = Detector(cfg)
+        except (FileNotFoundError, ValueError, OSError) as err:
+            print(f"{err}", file=sys.stderr)
+            return EXIT_USAGE
+
+        window = Window(enabled=not args.no_window, stream=source.is_stream)
+        if source.is_stream:
+            return run_stream(source, detector, cfg, args, window, rule_set)
+        return run_images(source, detector, cfg, args, window)
 
 
 if __name__ == "__main__":

@@ -75,9 +75,18 @@ os.environ["KMP_BLOCKTIME"] = "0"
 # stub is what gets used. Like `YOLO_OFFLINE`, it has to be in place before the
 # first `import openvino`, and like it, it stays out of the user profile: the
 # consent file there belongs to the machine, not to this repository.
-sys.modules.setdefault("openvino_telemetry", None)
-
+#
+# Assigned, not `setdefault`: if something imported the package ahead of this
+# module, `setdefault` would keep the real one and leave telemetry on without a
+# word. The assignment still blocks every later import of it, and the warning
+# says that whatever imported it first may already have sent its event.
 log = logging.getLogger(__name__)
+if sys.modules.get("openvino_telemetry") is not None:
+    log.warning(
+        "openvino_telemetry was imported before core.detector; "
+        "switching it off now may be too late for that import"
+    )
+sys.modules["openvino_telemetry"] = None
 
 # Quoted verbatim from ARCHITECTURE.md section 7 and the brief. Users grep for
 # this sentence, so it is the whole message and nothing is appended to it.
@@ -103,7 +112,7 @@ class Detector:
         # it is handed a name it cannot find on disk. On a machine with no
         # network that turns into a confusing crash somewhere deeper, so the
         # check happens here, before `ultralytics` is even imported.
-        _require_weights(weights)
+        require_weights(cfg)
 
         # `YOLO` picks the backend from the path itself -- a `.pt` file or an
         # OpenVINO folder -- so nothing below this line knows the format.
@@ -138,13 +147,16 @@ class Detector:
         return detections
 
 
-def _require_weights(weights: Path) -> None:
-    """Raise `FileNotFoundError` unless `weights` is a model Ultralytics can load.
+def require_weights(cfg: Config) -> None:
+    """Raise `FileNotFoundError` unless `model.weights` is a model Ultralytics can load.
 
+    The check `Detector` makes first, public so a caller can make it before
+    anything costly -- switching a webcam on -- without loading the model.
     A file is taken as it is. A folder has to hold an OpenVINO `.xml`: an
     export interrupted half-way leaves the folder behind, and handing that to
     Ultralytics ends in a traceback about a missing file deep inside it.
     """
+    weights = Path(cfg.model.weights)
     if weights.is_file():
         return
     if weights.is_dir() and any(weights.glob("*.xml")):

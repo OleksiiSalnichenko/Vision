@@ -12,6 +12,7 @@ import cv2
 import numpy as np
 import pytest
 
+import core.source
 from core.config import load_config
 from core.source import Source
 
@@ -113,3 +114,93 @@ def test_broken_video_fails_in_the_constructor(tmp_path, cfg, content):
 def test_camera_without_an_index_is_refused(cfg, spec):
     with pytest.raises(ValueError, match="camera"):
         Source(spec, cfg)
+
+
+# --- releasing the camera ----------------------------------------------------
+#
+# The camera is a stand-in: `open_camera` is replaced before `Source` is built,
+# so these tests never reach a driver. Index 9 is one nobody has plugged in,
+# should a regression bypass the stand-in.
+
+
+class FakeCapture:
+    """A camera that delivers black frames until it is released."""
+
+    def __init__(self, width: int, height: int) -> None:
+        self.size = (width, height)
+        self.releases = 0
+
+    def get(self, prop):
+        return {
+            cv2.CAP_PROP_FRAME_WIDTH: self.size[0],
+            cv2.CAP_PROP_FRAME_HEIGHT: self.size[1],
+            cv2.CAP_PROP_FPS: 30.0,
+        }.get(prop, 0.0)
+
+    def read(self):
+        if self.releases:
+            return False, None
+        return True, np.zeros((self.size[1], self.size[0], 3), dtype=np.uint8)
+
+    def release(self) -> None:
+        self.releases += 1
+
+
+@pytest.fixture
+def camera(monkeypatch, cfg):
+    """The capture `Source("camera:9", cfg)` will be handed."""
+    capture = FakeCapture(cfg.capture.width, cfg.capture.height)
+
+    def fake_open(index, _cfg):
+        assert index == 9
+        return capture
+
+    monkeypatch.setattr(core.source, "open_camera", fake_open)
+    return capture
+
+
+def test_close_releases_the_camera_exactly_once(camera, cfg):
+    source = Source("camera:9", cfg)
+
+    source.close()
+    source.close()
+
+    assert camera.releases == 1
+
+
+def test_leaving_a_with_block_releases_the_camera(camera, cfg):
+    with Source("camera:9", cfg) as source:
+        assert source.is_camera
+    assert camera.releases == 1
+
+
+def test_a_closed_camera_cannot_be_iterated_again(camera, cfg):
+    source = Source("camera:9", cfg)
+    source.close()
+
+    with pytest.raises(RuntimeError, match="^source already consumed: camera 9$"):
+        next(iter(source))
+
+
+def test_a_camera_is_consumed_by_its_first_iteration(camera, cfg):
+    source = Source("camera:9", cfg)
+    frames = iter(source)
+    next(frames)
+    next(frames)
+    frames.close()  # the caller stopped: the camera is released
+
+    with pytest.raises(RuntimeError, match="^source already consumed: camera 9$"):
+        next(iter(source))
+    assert camera.releases == 1
+
+
+def test_close_on_a_still_changes_nothing(tmp_path, cfg):
+    path = tmp_path / "still.jpg"
+    ok, encoded = cv2.imencode(".jpg", np.zeros((8, 8, 3), dtype=np.uint8))
+    path.write_bytes(encoded.tobytes())
+    source = Source(path, cfg)
+
+    source.close()
+
+    assert not source.is_camera
+    assert len(list(source)) == 1
