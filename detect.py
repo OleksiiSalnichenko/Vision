@@ -2,11 +2,12 @@
 """The CLI: a photo, a folder, a video file or a webcam goes in; an overlay,
 a set of numbers and -- on a stream -- rule events come out.
 
-This file is the wiring and nothing else. Every decision it makes is about
-order -- read a frame, detect, track, split, colour, choose the target, draw,
-fire rules, save, show -- and every decision about *how* belongs to the module
-it calls. `core/` knows nothing about argparse or about how it was started,
-and that is what keeps the later phases an addition rather than a rewrite.
+This file is flags, console and exit codes, and nothing else. The order of a
+frame -- detect, track, split, colour, choose the target, draw, fire rules,
+save -- lives in `core.pipeline`, which the desktop app runs as well, so the
+two can never drift apart. `core/` knows nothing about argparse or about how
+it was started, and that is what keeps the later phases an addition rather
+than a rewrite.
 
 Two branches share it. `run_images` is phase 1 unchanged: one frame at a time,
 a JSON and a JPG per photo, a console line per detection, and the event bus
@@ -14,13 +15,8 @@ hears every drawn detection. `run_stream` handles video and webcams: ByteTrack
 ids, a target, `rules.yaml`, one JSONL line per frame, and a console that
 prints rule events only.
 
-The one piece of logic that genuinely lives here is the split between what is
-drawn and what is only recorded. `Detector` returns everything from
-`conf_debug` upwards in a single list; `core.detector.is_debug` tells the two
-groups apart, and this module is the only caller of it. `core.draw` and
-`core.output` are handed ready-made lists and never learn a threshold -- if the
-split moved into them, a near-miss would start being drawn and printed and
-nothing would say so.
+The split between what is drawn and what is only recorded is made in
+`core.pipeline` and nowhere else; this module is handed the two lists.
 
 Usage:
     venv\\Scripts\\python detect.py --source data/test_images/bus.jpg
@@ -32,25 +28,20 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
-import importlib.util
 import logging
 import sys
-import time
-from collections import deque
 from collections.abc import Callable
 from pathlib import Path
 
 import cv2
 import numpy as np
 
-from core import aim, draw, events, output
+from core import events, output, pipeline
 from core.config import Config, load_config
-from core.detector import Detector, is_debug, require_weights
-from core.rules import CALL, RuleEngine, RuleSet, load_rules
+from core.detector import Detector, require_weights
+from core.rules import RuleSet
 from core.source import Source, is_stream_spec
-from core.target import Targeting, TargetState
-from core.tracker import Tracker
-from core.types import Detection, Frame
+from core.types import Frame
 
 log = logging.getLogger("vision.detect")
 
@@ -69,10 +60,6 @@ EXIT_STREAM_FAILED = 1  # the camera went away mid-run; the files are still whol
 
 # Keys that close the window early while walking a folder.
 _QUIT_KEYS = frozenset({27, ord("q"), ord("Q")})  # 27 is Esc
-
-# Frames the on-screen FPS is averaged over: long enough not to flicker,
-# short enough to follow a real slowdown within a couple of seconds.
-_FPS_WINDOW = 30
 
 
 def configure_console() -> None:
@@ -167,53 +154,32 @@ def with_overrides(cfg: Config, args: argparse.Namespace) -> Config:
 def process(
     frame: Frame, detector: Detector, cfg: Config, want_color: bool
 ) -> np.ndarray:
-    """Run one frame through the pipeline and return the annotated image.
+    """Run one photo through the pipeline, say what was found, and return the overlay.
 
-    The split is the whole point of this function: `drawn` is what the user
-    sees, what the console lists and what the event bus hears; `near_miss`
-    exists only in the JSON.
+    `drawn` is what the user sees, what the console lists and what the event
+    bus hears; `near_miss` exists only in the JSON. The split itself is made
+    in `core.pipeline`.
     """
-    detections = detector(frame)
-    drawn = [item for item in detections if not is_debug(item, cfg)]
-    near_miss = [item for item in detections if is_debug(item, cfg)]
+    result = pipeline.process_still(frame, detector, cfg, want_color)
 
-    if want_color:
-        _add_colors(frame, drawn)
+    output.print_console(frame.source, result.drawn)
+    # Each file is named as soon as it is on disk, so a failing JSON write
+    # still leaves the image's line on the console.
+    pipeline.save_still(
+        frame.source, result, cfg, on_written=lambda path: print(f"  wrote {path}")
+    )
+    if result.near_miss:
+        print(f"  ({len(result.near_miss)} near-miss below conf, in the JSON only)")
 
-    canvas = draw.annotate(frame.image, drawn, cfg)
-
-    output.print_console(frame.source, drawn)
-    _report(output.write_image(frame.source, canvas, cfg))
-    _report(output.write_json(frame.source, drawn, cfg, debug_detections=near_miss))
-    if near_miss:
-        print(f"  ({len(near_miss)} near-miss below conf, in the JSON only)")
-
-    for detection in drawn:
+    for detection in result.drawn:
         events.emit(detection)
 
-    return canvas
+    return result.canvas
 
 
-def _add_colors(frame: Frame, detections: list[Detection]) -> None:
-    """Fill in `color` for the detections that will be drawn.
-
-    Imported here and nowhere else: without `--color` the scikit-learn import
-    is never paid for. Only the drawn boxes are sampled -- a colour is a thing
-    the user looks at, and a near-miss is never looked at.
-    """
-    from core.attributes import dominant_color  # noqa: PLC0415 -- behind the flag
-
-    for detection in detections:
-        try:
-            detection.color = dominant_color(frame.image, detection.bbox)
-        except ValueError as err:  # a box too small or too far off the frame
-            log.warning("no colour for %s: %s", detection.cls_name, err)
-
-
-def _report(path: Path | None) -> None:
-    """Name a written file, or say nothing when the config turned it off."""
-    if path is not None:
-        print(f"  wrote {path}")
+def want_color(args: argparse.Namespace, cfg: Config) -> bool:
+    """Colour is drawn when `--color` is given or `display.color` is true."""
+    return bool(args.color) or cfg.display.color
 
 
 class Window:
@@ -276,7 +242,7 @@ def run_images(source: Source, detector: Detector, cfg: Config, args: argparse.N
     """Phase 1, unchanged: a photo or a folder, one frame at a time."""
     try:
         for frame in source:
-            canvas = process(frame, detector, cfg, args.color)
+            canvas = process(frame, detector, cfg, want_color(args, cfg))
             if not window.show(canvas):
                 break
     finally:
@@ -318,76 +284,24 @@ def prepare_rules(cfg: Config) -> RuleSet:
 
     Raises `FileNotFoundError` or `ValueError` with one sentence; on a failure
     the bus is left empty. On success the handlers stay registered, and the
-    caller clears the bus once the stream is over.
+    caller clears the bus once the stream is over. `HANDLERS_PATH` is read at
+    call time.
     """
-    rule_set = load_rules(PROJECT_ROOT / cfg.rules.file)
-    if rule_set.calls():
-        try:
-            _load_handlers(rule_set)
-        except BaseException:
-            events.clear()
-            raise
-    return rule_set
-
-
-def _load_handlers(rule_set: RuleSet) -> None:
-    """Run `handlers.py` so its `@on_detect` functions register, then check names.
-
-    Loaded from its path rather than imported, so a second stream in the same
-    process registers the functions again after `events.clear()`. Raises
-    `FileNotFoundError` when the file is missing and `ValueError` naming the
-    first function a rule calls that nothing registered.
-    """
-    if not HANDLERS_PATH.is_file():
-        raise FileNotFoundError(f"handlers file not found: {HANDLERS_PATH}")
-    spec = importlib.util.spec_from_file_location("handlers", HANDLERS_PATH)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-
-    registered = events.names()
-    for name in sorted(rule_set.calls()):
-        if name not in registered:
-            raise ValueError(f"unknown handler in rules.yaml: {name}")
-    _warn_unreachable(rule_set)
-
-
-def _warn_unreachable(rule_set: RuleSet) -> None:
-    """Warn once per rule whose class no handler it calls will ever accept.
-
-    `events.call` keeps the handler's class filter, so a rule on `person`
-    calling a handler registered for `cell phone` would fire and do nothing.
-    """
-    for rule in rule_set.rules:
-        if rule.cls is None:
-            continue
-        for action in rule.actions:
-            if not (isinstance(action, tuple) and action[0] == CALL):
-                continue
-            classes = events.subscriptions(action[1])
-            if None not in classes and rule.cls not in classes:
-                log.warning(
-                    "rule %s is on %s, but %s only listens to %s; it will never run",
-                    rule.name, rule.cls, action[1], ", ".join(sorted(classes)),
-                )
+    return pipeline.prepare_rules(PROJECT_ROOT / cfg.rules.file, HANDLERS_PATH)
 
 
 def _stream(source: Source, detector: Detector, cfg: Config, args: argparse.Namespace,
             window: Window, rule_set: RuleSet) -> int:
     """The frame loop of `run_stream`, once the rules and handlers are in place."""
-    # A new tracker, target and rule engine per stream: rule cooldowns are keyed
-    # by track id, and a new tracker numbers its tracks from 1 again.
-    tracker = Tracker(cfg)
-    targeting = Targeting(cfg)
-    engine = RuleEngine(rule_set)
-    # Only a video file gets an .mp4 back; a camera's frames go to the JSONL.
-    is_video = not source.is_camera
+    session = pipeline.StreamSession(
+        detector, cfg, rule_set, source.fps, source.frame_size,
+        # Only a video file gets an .mp4 back; a camera's frames go to the JSONL.
+        is_video=not source.is_camera,
+        on_log=lambda event: output.print_event(event),
+        want_color=want_color(args, cfg),
+    )
+    window.on_click(session.click)
 
-    on_screen: list[Detection] = []  # the drawn detections of the frame shown now
-    window.on_click(lambda point: targeting.click(point, on_screen))
-
-    writer: output.StreamWriter | None = None
-    ticks: deque[float] = deque(maxlen=_FPS_WINDOW)
-    frames = fired = 0
     code = 0
     incoming = iter(source)
     try:
@@ -403,38 +317,17 @@ def _stream(source: Source, detector: Detector, cfg: Config, args: argparse.Name
                 code = EXIT_STREAM_FAILED
                 break
 
-            ticks.append(time.perf_counter())
-            detections = tracker.update(frame, detector(frame))
-            drawn = [item for item in detections if not is_debug(item, cfg)]
-            near_miss = [item for item in detections if is_debug(item, cfg)]
-            if args.color:
-                _add_colors(frame, drawn)
-
-            height, width = frame.image.shape[:2]
-            target = targeting.choose(drawn, (width, height))
-            status = _status(target, _fps(ticks))
-            canvas = draw.annotate(frame.image, drawn, cfg, target, status)
-
             try:
-                for event in engine.update(frame.time, drawn):
-                    fired += 1
-                    _act(event, frame, canvas, cfg)
-
-                if writer is None:
-                    # Named after the first frame, so a bare `0` still writes camera_0.
-                    writer = output.StreamWriter(
-                        frame.source, cfg, source.fps, source.frame_size or (width, height),
-                        is_video,
-                    )
-                writer.write(frame, drawn, near_miss, target, canvas)
-            except OSError as err:  # a file that could not be written, named in err
+                result = session.step(frame)
+            except pipeline.StreamWriteError as err:
+                # Only an event frame, the JSONL or the .mp4 that could not be
+                # written, named in err. An OSError from the model, the tracker,
+                # drawing or a handler is not caught here and propagates.
                 print(f"{err}", file=sys.stderr)
                 code = EXIT_USAGE
                 break
-            frames += 1
 
-            on_screen[:] = drawn
-            if not window.show(canvas):
+            if not window.show(result.canvas):
                 break
     except KeyboardInterrupt:
         pass  # Ctrl+C is how a camera run without a window is stopped
@@ -444,43 +337,10 @@ def _stream(source: Source, detector: Detector, cfg: Config, args: argparse.Name
         close_frames = getattr(incoming, "close", None)
         if close_frames is not None:
             close_frames()
-        paths = writer.close() if writer is not None else []
+        paths = session.close()
         window.close()
-        output.print_stream_summary(frames, fired, paths)
+        output.print_stream_summary(session.frames, session.fired, paths)
     return code
-
-
-def _act(event, frame: Frame, canvas: np.ndarray, cfg: Config) -> None:
-    """Carry out one rule event's actions, in the order the rule lists them."""
-    for action in event.actions:
-        if action == "log":
-            output.print_event(event)
-        elif action == "save_frame":
-            output.write_event_frame(event, frame.source, frame.index, canvas, cfg)
-        elif isinstance(action, tuple) and action[0] == CALL:
-            events.call(action[1], event.detection)
-
-
-def _fps(ticks: deque[float]) -> float:
-    """Frames per second over the last `_FPS_WINDOW` frames, 0 until there are two."""
-    if len(ticks) < 2 or ticks[-1] <= ticks[0]:
-        return 0.0
-    return (len(ticks) - 1) / (ticks[-1] - ticks[0])
-
-
-def _status(target: TargetState, fps: float) -> str:
-    """The line at the top of the overlay: the target, its arrow, and the FPS."""
-    rate = f"{fps:.1f} FPS"
-    if target.lost:
-        return f"target: lost  {rate}"
-    detection = target.detection
-    if detection is None:
-        return f"target: none  {rate}"
-    arrow = aim.aim(detection.dx, detection.dy)  # the servo seam: once a frame, target only
-    return (
-        f"target #{detection.track_id} {detection.cls_name}  "
-        f"dx {detection.dx:+d} dy {detection.dy:+d}  {arrow}  {rate}"
-    )
 
 
 def main(argv: list[str] | None = None) -> int:

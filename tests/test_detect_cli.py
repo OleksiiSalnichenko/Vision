@@ -21,7 +21,7 @@ import numpy as np
 import pytest
 
 import detect
-from core import events
+from core import draw, events, output
 from core.config import load_config
 from core.types import Detection, Frame
 
@@ -82,7 +82,7 @@ def test_only_detections_at_or_above_conf_are_drawn_printed_and_marked(
     near_miss = detection("bottle", 0.30)
     handed_to_annotate = []
     monkeypatch.setattr(
-        detect.draw,
+        draw,
         "annotate",
         lambda image, detections, config: handed_to_annotate.append(list(detections))
         or image,
@@ -413,7 +413,7 @@ def test_a_file_that_cannot_be_written_is_a_usage_error_not_a_camera_failure(
     def refuse(*args, **kwargs):
         raise OSError("could not encode image: out/events/camera_9_person_appeared_1.jpg")
 
-    monkeypatch.setattr(detect.output, "write_event_frame", refuse)
+    monkeypatch.setattr(output, "write_event_frame", refuse)
     camera = CameraStub(frames=FRAMES)
 
     code, _ = run_main(monkeypatch, stream_config(SAVE_FRAME_RULES), camera)
@@ -447,3 +447,102 @@ def test_a_broken_rules_file_never_switches_the_camera_on(stream_config, capsys,
     assert code == detect.EXIT_USAGE
     assert opened == []
     assert "person_appeared" in capsys.readouterr().err
+
+
+# --- colour: the flag or the config key ------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("flag", "key", "coloured"),
+    [(True, False, True), (False, True, True), (False, False, False)],
+)
+def test_colour_is_drawn_for_the_flag_or_the_config_key(
+    flag, key, coloured, tmp_path, write_config, monkeypatch
+):
+    import core.attributes
+
+    monkeypatch.setattr(core.attributes, "dominant_color", lambda image, bbox: "red")
+    cfg = load_config(
+        write_config(
+            {
+                "model.conf": CONF,
+                "model.conf_debug": CONF_DEBUG,
+                "display.color": key,
+                "output.save_json": True,
+                "output.save_image": False,
+                "output.dir": tmp_path.as_posix(),
+            }
+        )
+    )
+    photo = Frame(image=np.zeros((60, 80, 3), np.uint8), source="photo.jpg", index=0)
+
+    detect.run_images(
+        [photo], StubDetector([detection("person", 0.90)]), cfg,
+        argparse.Namespace(color=flag), detect.Window(enabled=False),
+    )
+
+    written = json.loads((tmp_path / "photo.json").read_text(encoding="utf-8"))
+    assert written["detections"][0]["color"] == ("red" if coloured else None)
+
+
+# --- a write failure is a usage error; any other OSError is not -------------
+
+
+class FailingDetector:
+    """A model that works for `good` frames, then raises the OSError it was given."""
+
+    def __init__(self, good: int, error: OSError) -> None:
+        self._good = good
+        self._error = error
+        self.calls = 0
+
+    def __call__(self, frame: Frame) -> list[Detection]:
+        self.calls += 1
+        if self.calls > self._good:
+            raise self._error
+        return [detection("person", 0.90)]
+
+
+def test_an_oserror_from_the_detector_mid_stream_propagates(stream_cfg, tmp_path, capsys):
+    failing = FailingDetector(good=2, error=OSError("model file vanished"))
+
+    with pytest.raises(OSError, match="model file vanished"):
+        detect.run_stream(
+            StubSource(), failing, stream_cfg(APPEARED_RULES), stream_args(),
+            detect.Window(enabled=False, stream=True),
+        )
+
+    assert capsys.readouterr().err == ""  # not reported as an unwritable file
+    assert len((tmp_path / "clip.jsonl").read_text(encoding="utf-8").splitlines()) == 2
+
+
+def test_a_stream_file_that_cannot_be_written_is_a_usage_error(
+    stream_cfg, tmp_path, capsys, monkeypatch
+):
+    def refuse(self, *args, **kwargs):
+        raise OSError("could not write out/clip.jsonl")
+
+    monkeypatch.setattr(output.StreamWriter, "write", refuse)
+
+    code = run(stream_cfg(APPEARED_RULES))
+
+    assert code == detect.EXIT_USAGE
+    assert capsys.readouterr().err.strip() == "could not write out/clip.jsonl"
+
+
+def test_a_photo_whose_json_cannot_be_written_still_names_the_image_first(
+    cfg, tmp_path, capsys, monkeypatch
+):
+    cfg = dataclasses.replace(cfg, output=dataclasses.replace(cfg.output, save_image=True))
+
+    def refuse(*args, **kwargs):
+        raise OSError("could not write photo.json")
+
+    monkeypatch.setattr(output, "write_json", refuse)
+    frame = Frame(image=np.zeros((60, 80, 3), np.uint8), source="photo.jpg", index=0)
+
+    with pytest.raises(OSError, match="photo.json"):
+        detect.process(frame, StubDetector([detection("person", 0.90)]), cfg, want_color=False)
+
+    printed = capsys.readouterr().out.splitlines()
+    assert printed[-1] == f"  wrote {tmp_path / 'photo_annotated.jpg'}"
