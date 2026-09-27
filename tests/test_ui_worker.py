@@ -186,7 +186,7 @@ def cfg(tmp_path, write_config, out_dir):
 class Recorder:
     """Every signal of one worker, in the order it came."""
 
-    def __init__(self, worker: PipelineWorker) -> None:
+    def __init__(self, worker: PipelineWorker, acknowledge: bool = True) -> None:
         self.frames: list[FramePayload] = []
         self.events: list[str] = []
         self.failed: list[str] = []
@@ -201,6 +201,9 @@ class Recorder:
         worker.model_ready.connect(self.model_ready.append)
         worker.model_failed.connect(self.model_failed.append)
         worker.applied.connect(self.applied.append)
+        if acknowledge:
+            # As the window does: every frame taken is said back, so the next one comes.
+            worker.frame_ready.connect(worker.frame_shown)
 
 
 @pytest.fixture
@@ -208,10 +211,10 @@ def make_worker(qtbot):
     """Build a worker on the test's thread and make sure it is stopped afterwards."""
     made = []
 
-    def build(cfg, detector_factory, source_factory):
+    def build(cfg, detector_factory, source_factory, acknowledge=True):
         worker = PipelineWorker(cfg, detector_factory, source_factory)
         made.append(worker)
-        return worker, Recorder(worker)
+        return worker, Recorder(worker, acknowledge)
 
     yield build
     for worker in made:
@@ -352,6 +355,39 @@ def test_a_video_runs_to_the_end_with_events_and_a_summary(
     assert str(out_dir / "clip.jsonl") in summary
     assert source.closed == 1
     assert seen.failed == []
+
+
+def test_an_unshown_frame_holds_back_the_next_but_every_frame_is_written(
+    cfg, make_worker, qtbot, out_dir, clip
+):
+    count = 40
+    worker, seen = make_worker(cfg, DetectorFactory(StubDetector([PERSON])),
+                               SourceFactory({clip: video_source(count)}), acknowledge=False)
+    worker.load_model()
+    with qtbot.waitSignal(worker.finished, timeout=TIMEOUT_MS):
+        worker.open_source(clip)
+
+    # Never acknowledged: the first frame, and at the end only the last one.
+    assert [p.index for p in seen.frames] == [0, count - 1]
+    [summary] = seen.finished
+    assert summary.startswith(f"{count} frames, 1 events, wrote ")
+    assert len((out_dir / "clip.jsonl").read_text(encoding="utf-8").splitlines()) == count
+    assert len(seen.events) == 1  # the rules saw every frame
+
+
+def test_acknowledging_a_frame_brings_the_newest_one(cfg, make_worker, qtbot, clip):
+    detector = StubDetector([PERSON])
+    worker, seen = make_worker(cfg, DetectorFactory(detector),
+                               SourceFactory({clip: video_source(10_000)}), acknowledge=False)
+    worker.load_model()
+    worker.open_source(clip)
+    qtbot.waitUntil(lambda: detector.calls >= 5, timeout=TIMEOUT_MS)
+    assert len(seen.frames) == 1
+
+    worker.frame_shown()
+
+    assert len(seen.frames) == 2
+    assert seen.frames[1].index == detector.calls - 1  # the newest, not the second
 
 
 # --- a camera: stop, switch, failure --------------------------------------------------

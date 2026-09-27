@@ -20,6 +20,7 @@ import numpy as np
 import pytest
 import shiboken6
 from PySide6.QtCore import QPoint, Qt
+from PySide6.QtWidgets import QLabel
 
 import app
 from conftest import config_text, schema_value
@@ -38,6 +39,7 @@ TIMEOUT_MS = 5000
 NAMES = {0: "person", 1: "bottle"}
 CAMERA_INDEX = 7
 CAMERA = f"camera:{CAMERA_INDEX}"
+MISSING_WEIGHTS = "run scripts/fetch_models.py first"
 
 
 def detection(cls_name: str, conf: float, bbox, dx: int, dy: int) -> Detection:
@@ -66,7 +68,9 @@ class StubDetector:
         return dict(NAMES)
 
     def set_classes(self, classes) -> None:
-        pass
+        unknown = sorted(set(classes) - set(NAMES.values()))
+        if unknown:  # the sentence the real Detector gives
+            raise ValueError(f"unknown class names in config: {', '.join(unknown)}")
 
     def __call__(self, frame: Frame) -> list[Detection]:
         return list(self.detections)
@@ -116,6 +120,18 @@ rules:
     class: person
     do: [log]
 """
+
+
+@pytest.fixture(scope="module", autouse=True)
+def tracker_imported():
+    """Pay the tracker's one-time import (about 3 s) before any wait starts counting.
+
+    `Tracker.__init__` imports Ultralytics' ByteTrack lazily, so the first stream
+    in the process would spend most of TIMEOUT_MS on it under a loaded CPU.
+    """
+    import core.detector  # noqa: F401 -- the offline switches first, as core.tracker does
+    from ultralytics.engine.results import Boxes  # noqa: F401
+    from ultralytics.trackers.byte_tracker import BYTETracker  # noqa: F401
 
 
 @pytest.fixture(autouse=True)
@@ -205,10 +221,13 @@ def make_window(qtbot):
     """A window whose worker sees the given detections and sources; closed afterwards."""
     made: list[MainWindow] = []
 
-    def build(cfg, detections, sources: dict, detector_error: Exception | None = None):
-        def detector_factory(_cfg):
+    def build(cfg, detections, sources: dict, detector_error: Exception | None = None,
+              failing_weights: tuple[str, ...] = ()):
+        def detector_factory(model_cfg):
             if detector_error is not None:
                 raise detector_error
+            if Path(model_cfg.model.weights).name in failing_weights:
+                raise FileNotFoundError(MISSING_WEIGHTS)
             return StubDetector(detections)
 
         def worker_factory(session_cfg):
@@ -345,7 +364,10 @@ def test_slider_redraws_a_photo_and_its_release_rewrites_the_files(cfg, make_win
     assert window.near_miss_label.text().startswith("0 near-miss")
 
     def bottle_is_drawn() -> bool:
-        data = json.loads(json_path.read_text(encoding="utf-8"))
+        try:
+            data = json.loads(json_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return False  # read while the worker was rewriting it
         return [d["debug"] for d in data["detections"] if d["cls_name"] == "bottle"] == [False]
 
     assert not bottle_is_drawn()  # still held down: the files wait for the release
@@ -446,6 +468,220 @@ def test_closing_the_window_releases_the_camera_and_ends_the_thread(cfg, make_wi
     assert camera.closed == 1
     # The worker went with its thread (deleteLater on `finished`).
     qtbot.waitUntil(lambda: not shiboken6.isValid(window.worker), timeout=TIMEOUT_MS)
+
+
+# --- the settings panel ---------------------------------------------------------------
+
+
+@pytest.fixture
+def models_dir(tmp_path, monkeypatch) -> Path:
+    """A `models\\` folder of its own: `good.pt` loads, `missing.pt` does not."""
+    folder = tmp_path / "models"
+    folder.mkdir()
+    for name in ("good.pt", "missing.pt"):
+        (folder / name).write_bytes(b"weights")
+    monkeypatch.setattr(main_window, "MODELS_DIR", folder)
+    return folder
+
+
+def test_the_panel_is_in_the_window_and_a_change_goes_to_the_worker_at_once(cfg, make_window,
+                                                                            qtbot):
+    window = make_window(cfg, [PERSON], {})
+    assert window.settings.parent() is window.settings_area
+    wait_ready(qtbot, window)
+    # model_ready fills the class list with the model's names.
+    assert [window.settings.classes_list.item(i).text()
+            for i in range(window.settings.classes_list.count())] == ["person", "bottle"]
+
+    assert window.table.isColumnHidden(column(window, "colour"))
+
+    window.settings.color_check.setChecked(True)
+
+    # The column follows the worker's `applied`: the config really reached the worker.
+    # (Not qtbot.waitSignal on the worker: its callback runs on the worker's thread,
+    # ahead of the window's queued slot.)
+    qtbot.waitUntil(lambda: not window.table.isColumnHidden(column(window, "colour")),
+                    timeout=TIMEOUT_MS)
+
+
+def test_a_model_that_will_not_load_leaves_the_old_one_in_the_panel(cfg, make_window, qtbot,
+                                                                   warnings, models_dir):
+    window = make_window(cfg, [PERSON], {}, failing_weights=("missing.pt",))
+    wait_ready(qtbot, window)
+    before = window.settings.model_box.currentText()
+
+    window.settings.model_box.setCurrentText("models/missing.pt")
+    assert window.status_label.text() == "Loading model…"
+
+    qtbot.waitUntil(lambda: warnings == [MISSING_WEIGHTS], timeout=TIMEOUT_MS)
+    qtbot.waitUntil(lambda: window.settings.model_box.currentText() == before,
+                    timeout=TIMEOUT_MS)
+    assert window.status_label.text() != "Loading model…"
+    assert window.open_file_button.isEnabled()  # the old model still runs
+
+
+def test_without_weights_the_panel_still_works_and_another_model_can_be_chosen(
+        cfg, make_window, qtbot, warnings, models_dir):
+    window = make_window(cfg, [PERSON], {}, failing_weights=(Path(cfg.model.weights).name,))
+    qtbot.waitUntil(lambda: warnings == [MISSING_WEIGHTS], timeout=TIMEOUT_MS)
+    assert not window.open_file_button.isEnabled()
+    assert window.settings.isEnabled()
+
+    window.settings.model_box.setCurrentText("models/good.pt")
+
+    wait_ready(qtbot, window)
+    assert window.settings.classes_list.count() == len(NAMES)
+
+
+def test_a_class_the_model_does_not_know_is_said_and_the_panel_goes_back(
+        tmp_path, write_config, make_window, qtbot, warnings):
+    weights = tmp_path / "stub.pt"
+    weights.write_bytes(b"weights")
+    cfg = load_config(write_config({"model.weights": weights.as_posix(), "classes": ["ghost"]}))
+    window = make_window(cfg, [PERSON], {})
+    wait_ready(qtbot, window)
+    panel = window.settings
+    person = panel.classes_list.findItems("person", Qt.MatchFlag.MatchExactly)[0]
+
+    person.setCheckState(Qt.CheckState.Checked)
+
+    qtbot.waitUntil(lambda: warnings == ["unknown class names in config: ghost"],
+                    timeout=TIMEOUT_MS)
+    qtbot.waitUntil(lambda: panel.config().classes == ["ghost"], timeout=TIMEOUT_MS)
+    person = panel.classes_list.findItems("person", Qt.MatchFlag.MatchExactly)[0]
+    assert person.checkState() == Qt.CheckState.Unchecked
+
+
+# --- Save to config.yaml ---------------------------------------------------------------
+
+
+@pytest.fixture
+def config_copy(cfg, tmp_path, monkeypatch) -> Path:
+    """The test config with comments added; the window saves into it, never the real one."""
+    path = tmp_path / "config.yaml"  # where `cfg` came from
+    text = path.read_text(encoding="utf-8")
+    conf_line = f"  conf: {CONF}\n"
+    assert text.count(conf_line) == 1
+    text = "# Vision settings\n" + text.replace(conf_line, f"  conf: {CONF}  # threshold\n")
+    path.write_text(text, encoding="utf-8")
+    monkeypatch.setattr(main_window, "CONFIG_PATH", path)
+    return path
+
+
+def changed_lines(before: bytes, after: bytes) -> list[tuple[str, str]]:
+    old, new = before.decode("utf-8").splitlines(), after.decode("utf-8").splitlines()
+    assert len(old) == len(new)
+    return [(a, b) for a, b in zip(old, new) if a != b]
+
+
+def test_save_writes_only_what_changed_and_keeps_the_rest_of_the_file(config_copy, make_window,
+                                                                      qtbot):
+    before = config_copy.read_bytes()
+    cfg = load_config(config_copy)
+    window = make_window(cfg, [PERSON], {})
+    wait_ready(qtbot, window)
+    new_conf = window.slider.value() + 3
+    window.slider.setValue(new_conf)
+    colour = not cfg.display.color
+    window.settings.color_check.setChecked(colour)
+    qtbot.waitUntil(lambda: window.table.isColumnHidden(column(window, "colour")) is not colour,
+                    timeout=TIMEOUT_MS)  # the worker has applied it
+
+    window.settings.save_button.click()
+
+    assert window.notice_label.text() == "Saved: model.conf, display.color"
+    changes = changed_lines(before, config_copy.read_bytes())
+    assert [old.split(":")[0].strip() for old, _ in changes] == ["conf", "color"]
+    assert f"conf: {new_conf / 100}" in changes[0][1]
+    assert "#" in changes[0][1]  # the trailing comment stays
+    saved = load_config(config_copy)
+    assert saved.model.conf == new_conf / 100
+    assert saved.display.color is colour
+
+
+def test_save_with_nothing_changed_says_so_and_leaves_the_file(config_copy, make_window, qtbot):
+    before = config_copy.read_bytes()
+    window = make_window(load_config(config_copy), [PERSON], {})
+    wait_ready(qtbot, window)
+
+    window.settings.save_button.click()
+
+    assert window.notice_label.text() == "Nothing to save"
+    assert config_copy.read_bytes() == before
+
+
+def status_bar_texts(window) -> list[str]:
+    return [label.text() for label in window.statusBar().findChildren(QLabel)]
+
+
+def test_the_save_result_stays_readable_while_a_video_runs(config_copy, make_window, qtbot,
+                                                           video):
+    window = make_window(load_config(config_copy), [PERSON], {"clip.mp4": video})
+    wait_ready(qtbot, window)
+    window.open_source("clip.mp4")
+    qtbot.waitUntil(lambda: "FPS" in window.status_label.text(), timeout=TIMEOUT_MS)
+
+    window.settings.save_button.click()
+    shown = window.status_label.text()
+    qtbot.waitUntil(lambda: window.status_label.text() != shown, timeout=TIMEOUT_MS)
+    qtbot.wait(300)  # frames keep coming
+
+    assert "Nothing to save" in status_bar_texts(window)
+
+
+def test_save_right_after_a_panel_change_saves_the_new_value(config_copy, make_window, qtbot):
+    cfg = load_config(config_copy)
+    window = make_window(cfg, [PERSON], {})
+    wait_ready(qtbot, window)
+
+    # No event loop turn in between: the worker has not answered `applied` yet.
+    window.settings.center_line_check.setChecked(not cfg.display.center_line)
+    window.settings.save_button.click()
+
+    assert load_config(config_copy).display.center_line is (not cfg.display.center_line)
+
+
+def test_a_model_chosen_before_the_last_one_was_applied_still_says_loading(
+        cfg, make_window, qtbot, models_dir):
+    window = make_window(cfg, [PERSON], {})
+    wait_ready(qtbot, window)
+    before = window.settings.model_box.currentText()
+    window.settings.model_box.setCurrentText("models/good.pt")
+    # The new model's `model_ready` has been handled, its `applied` not yet.
+    window.worker.model_ready.emit(dict(NAMES))
+    assert window.status_label.text() != main_window.LOADING_TEXT
+
+    window.settings.model_box.setCurrentText(before)  # back: another reload
+
+    assert window.status_label.text() == main_window.LOADING_TEXT
+    qtbot.waitUntil(lambda: window.status_label.text() != main_window.LOADING_TEXT,
+                    timeout=TIMEOUT_MS)
+
+
+def test_save_into_a_broken_file_is_said_and_changes_nothing(config_copy, make_window, qtbot,
+                                                             warnings):
+    window = make_window(load_config(config_copy), [PERSON], {})
+    wait_ready(qtbot, window)
+    window.slider.setValue(window.slider.value() + 3)
+    broken = config_copy.read_bytes().replace(b"  conf_debug:", b"  #conf_debug:")
+    config_copy.write_bytes(broken)
+
+    window.settings.save_button.click()
+
+    assert len(warnings) == 1 and "conf_debug" in warnings[0]
+    assert config_copy.read_bytes() == broken
+
+
+def test_save_into_a_file_that_is_not_yaml_says_the_apps_sentence(config_copy, make_window,
+                                                                 qtbot, warnings):
+    window = make_window(load_config(config_copy), [PERSON], {})
+    wait_ready(qtbot, window)
+    config_copy.write_text("model: [\n", encoding="utf-8")
+
+    window.settings.save_button.click()
+
+    assert warnings == [app.not_yaml_text(config_copy)]
+    assert config_copy.read_text(encoding="utf-8") == "model: [\n"
 
 
 # --- the entry point -----------------------------------------------------------------

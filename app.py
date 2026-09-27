@@ -20,7 +20,7 @@ import yaml
 from core.detector import Detector
 from core.config import Config, load_config
 from core.source import Source
-from detect import CONFIG_PATH, EXIT_USAGE, configure_console
+from detect import CONFIG_PATH, EXIT_USAGE, configure_console, not_yaml_text
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -53,8 +53,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{err}", file=sys.stderr)
         return EXIT_USAGE
     except yaml.YAMLError:
-        # PyYAML's own message runs over several lines; one sentence is the rule.
-        print(f"config file is not valid YAML: {CONFIG_PATH}", file=sys.stderr)
+        print(not_yaml_text(CONFIG_PATH), file=sys.stderr)
         return EXIT_USAGE
 
     # Qt only now: a usage error above never needs it.

@@ -62,6 +62,12 @@ EXIT_STREAM_FAILED = 1  # the camera went away mid-run; the files are still whol
 _QUIT_KEYS = frozenset({27, ord("q"), ord("Q")})  # 27 is Esc
 
 
+def not_yaml_text(path) -> str:
+    """The one sentence for a config file PyYAML cannot parse (its own message runs
+    over several lines). The window says the same when Save meets such a file."""
+    return f"config file is not valid YAML: {path}"
+
+
 def configure_console() -> None:
     """Make stdout and stderr survive a file name the console cannot encode.
 

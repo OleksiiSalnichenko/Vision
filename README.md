@@ -181,6 +181,94 @@ is done, so a run stopped with Ctrl+C or by a camera failure still leaves every
 frame up to the last one. A webcam writes no video -- it would grow without
 limit -- and its files are named `camera_0.*`.
 
+## Desktop app
+
+Everything `detect.py` does, in one window:
+
+```
+venv\Scripts\python app.py
+```
+
+or with something opened as soon as the model is in:
+
+```
+venv\Scripts\python app.py --source data/test_images/bus.jpg
+```
+
+`--source` takes the same values as in `detect.py`: a photo, a folder, a video
+file or `camera:N`. The window opens at once and the model loads in the
+background; until it is in, the status bar says `Loading model…` and the open
+buttons are greyed out. A broken `config.yaml` is one sentence in the terminal
+and no window, exactly as with `detect.py`.
+
+Where things are:
+
+- **Top row** -- `Open file…` (a photo or a video), `Open folder…`, the camera
+  number (starts at `capture.camera`) and `Open camera`, then `Stop`, `Pause`
+  (video files only; the space bar does the same) and `◀ Prev` / `Next ▶` with
+  `3 / 12` for a folder. Stepping back through a folder does not run the model
+  again.
+- **Left** -- the frame with the same overlay `detect.py` writes into
+  `_annotated.*`, fitted to the window. Click a box to lock the target onto it,
+  click empty space to release it -- on a paused video too. Under the frame,
+  the `Confidence` slider.
+- **Middle** -- `Objects`: one row per drawn object (`#id`, class, conf, `dx`,
+  `dy`, `dx %`, `dy %`, and colour when it is on), the target row in magenta
+  and marked `TARGET`; under it, how many near-misses are hidden (they are in
+  the files only). Then `Events`: the same lines `detect.py` prints for
+  `rules.yaml`, newest at the bottom.
+- **Right** -- `Settings`: model, `imgsz`, classes, colour, centre line, and
+  `Save to config.yaml`.
+- **Bottom** -- the status bar: source, frame `i / N`, FPS, near-misses; at the
+  end of a video the same summary line `detect.py` prints.
+
+The **Confidence slider** runs from `model.conf_debug` up to `1.00` in steps of
+`0.01` and starts at `model.conf`. It cannot go lower: the model runs at
+`conf_debug`, so nothing below it exists. On a photo the boxes are redrawn at
+once without running the model again, and `out\<name>.json` /
+`<name>_annotated.jpg` are rewritten to match the screen when you let go of the
+slider. Moving it with the keyboard or the mouse wheel rewrites them too, on
+every step -- not only releasing a drag. On a video or a webcam the new
+threshold applies from the next frame -- boxes, list, target, rules and
+ByteTrack's own thresholds -- and track numbers carry on.
+
+**Settings apply at once**, to this session only; there is no Apply button.
+The model list shows the `*.pt` files and `*_openvino_model` folders in
+`models\`. Picking another model, or another `imgsz` (applied on Enter or when
+the field loses focus), reloads the model in the background -- the status bar
+says `Loading model…`, a running video waits and carries on with the same
+tracks, a photo is detected again. A model that will not load is said in a
+message box, and the previous one keeps working and comes back in the list.
+With an OpenVINO model `imgsz` is greyed out: the export fixed it (re-run
+`scripts\export_openvino.py --force` to change it). Classes are ticked from the
+loaded model's names; no tick means all of them. A class name the model does
+not know (a typo in `config.yaml`) stays in the list, marked; ticking classes
+while it is there gives `unknown class names in config: …` and the previous
+selection comes back. The colour tick is `--color` (slow, it loads
+scikit-learn) and is saved as `display.color`; `detect.py` names colours when
+either the flag or that key is on.
+
+**Save to config.yaml** writes only what differs from the file, out of
+`model.weights`, `model.imgsz`, `model.conf` (the slider), `classes`,
+`display.center_line` and `display.color`. The right end of the status bar says
+`Saved: model.conf, classes` or `Nothing to save` for a few seconds, even while
+a video runs. Comments, commented-out lines and
+key order stay as they were; the result is checked by loading it before it
+replaces the file, and on any error the file is left untouched and the
+sentence is shown.
+
+**Files** go to `out\` exactly as with `detect.py` on the same source: a photo
+writes `<name>.json` and `<name>_annotated.jpg`, a video `<name>.jsonl`,
+`<name>_annotated.mp4` and event frames, a webcam `camera_N.jsonl` and event
+frames. `rules.yaml` and `handlers.py` work the same way, and a broken
+`rules.yaml` is a message before the camera is switched on.
+
+**The camera is released** by `Stop`, by opening another source, or by closing
+the window -- the window waits for the processing thread to finish before it
+goes. A busy camera (`camera N is not available or busy`), one that stops
+mid-run, a file that will not open or cannot be written: each is one sentence
+in a message box, and the app stays open for the next source.
+
 ## Rules
 
 `rules.yaml` (path set by `rules.file` in `config.yaml`) says what counts as

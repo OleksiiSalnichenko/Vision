@@ -3,8 +3,10 @@
 The window only draws and forwards. Every command goes to the `PipelineWorker`
 through a queued signal -- the worker lives on its own `QThread` and owns the
 model, the source and the stream session -- and every frame comes back as a
-`FramePayload`. When frames arrive faster than the window paints, only the
-newest one is shown; the worker still writes every frame to the files. The
+`FramePayload`. The window says `frame_shown` back for every payload it has
+done with, and the worker sends nothing new until then, so an unpaced video
+never floods this thread's queue; only the newest frame is shown, and the
+worker still writes every frame to the files. The
 paint is requested as a queued call, not a zero timer: Qt drains posted events
 before it fires timers, so a timer would starve under a flood of frames.
 
@@ -20,10 +22,14 @@ released before the window is gone.
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
-from PySide6.QtCore import QObject, Qt, QThread, Signal, Slot
+import yaml
+
+from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal, Slot
 from PySide6.QtGui import QBrush, QCloseEvent, QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -45,11 +51,15 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.config import Config
+from core.config import Config, ConfigError, load_config, save_values
 from core.source import CAMERA_PREFIX, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
 from core.types import Detection
+from detect import CONFIG_PATH, PROJECT_ROOT, not_yaml_text
+from ui.settings_panel import SettingsPanel, model_entry
 from ui.view import FrameView
 from ui.worker import FramePayload, PipelineWorker
+
+MODELS_DIR = PROJECT_ROOT / "models"
 
 WINDOW_TITLE = "Vision"
 EMPTY_VIEW_TEXT = "Open a photo, a folder, a video or a camera"
@@ -58,18 +68,55 @@ LOADING_TEXT = "Loading model…"
 TARGET_MARK = "TARGET"
 COLUMNS = ("#id", "class", "conf", "dx", "dy", "dx %", "dy %", "colour")
 _COLOUR_COLUMN = COLUMNS.index("colour")
+MODEL_READY_TEXT = "Model ready"
+NOTHING_TO_SAVE_TEXT = "Nothing to save"
 
 # Presentation constants: the slider works in hundredths, the window's first size.
 _SLIDER_SCALE = 100
 _SLIDER_PAGE_STEP = 5  # hundredths per Page Up / Page Down
 _WINDOW_SIZE = (1280, 800)
 _CAMERA_MAX = 99
+_NOTICE_MS = 5000  # how long a one-off result ("Saved: ...") stays in the status bar
 _TARGET_BRUSH = QBrush(Qt.GlobalColor.magenta)
 _TARGET_TEXT = QBrush(Qt.GlobalColor.white)
 
 
 def near_miss_text(count: int) -> str:
     return f"{count} near-miss below threshold (in the files only)"
+
+
+def unsaved_values(session: Config, on_disk: Config, models_dir: str | Path) -> dict[str, Any]:
+    """The settings the window can change whose session value differs from the file's.
+
+    Keys are `model.weights`, `model.imgsz`, `model.conf`, `classes`,
+    `display.center_line`, `display.color`, in that order, as `save_values` takes them.
+
+    The weights compare in the model list's one spelling, so `./models/a.pt`
+    in the file is not a change against `models/a.pt` in the session; the
+    threshold compares in the slider's hundredths, so a file value the slider
+    can only show rounded is not a change either.
+    """
+    values: dict[str, Any] = {}
+    if model_entry(models_dir, session.model.weights) != \
+            model_entry(models_dir, on_disk.model.weights):
+        values["model.weights"] = session.model.weights
+    if session.model.imgsz != on_disk.model.imgsz:
+        values["model.imgsz"] = session.model.imgsz
+    conf = round(session.model.conf * _SLIDER_SCALE)
+    if conf != round(on_disk.model.conf * _SLIDER_SCALE):
+        values["model.conf"] = conf / _SLIDER_SCALE
+    if list(session.classes) != list(on_disk.classes):
+        values["classes"] = list(session.classes)
+    if session.display.center_line != on_disk.display.center_line:
+        values["display.center_line"] = session.display.center_line
+    if session.display.color != on_disk.display.color:
+        values["display.color"] = session.display.color
+    return values
+
+
+def saved_text(keys) -> str:
+    keys = list(keys)
+    return f"Saved: {', '.join(keys)}" if keys else NOTHING_TO_SAVE_TEXT
 
 
 def file_filter() -> str:
@@ -114,11 +161,16 @@ class MainWindow(QMainWindow):
     _set_conf = Signal(float)
     _commit_still = Signal()
     _show_index = Signal(int)
+    _apply = Signal(object)
+    _frame_shown = Signal()
 
     def __init__(self, cfg: Config, worker_factory: Callable[[Config], PipelineWorker],
                  parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._cfg = cfg
+        self._cfg = cfg  # what the worker last said the session runs on
+        # What the panel last sent: ahead of `_cfg` until the worker answers every apply.
+        self._sent = cfg
+        self._applies_pending = 0
         self._model_loaded = False
         self._payload: FramePayload | None = None  # the frame on screen
         self._pending: FramePayload | None = None  # the newest frame not yet painted
@@ -126,6 +178,8 @@ class MainWindow(QMainWindow):
         self._streaming = False  # a stream is running: its end says `finished`
         self._generation = 0  # bumped on every open
         self._live_generation = 0  # the open whose frames the worker now sends
+        self._loading = True  # a model is loading: its answer puts the status back
+        self._status_before_loading = ""
 
         self.setWindowTitle(WINDOW_TITLE)
         self.resize(*_WINDOW_SIZE)
@@ -215,9 +269,13 @@ class MainWindow(QMainWindow):
         side_widget = QWidget()
         side_widget.setLayout(side)
 
-        # The settings panel goes here (ticket 06).
+        # Always shown and always enabled: with no model loaded it is how another is chosen.
         self.settings_area = QWidget()
-        self.settings_area.setLayout(QVBoxLayout())
+        settings_layout = QVBoxLayout(self.settings_area)
+        settings_layout.setContentsMargins(0, 0, 0, 0)
+        settings_layout.addWidget(QLabel("Settings"))
+        self.settings = SettingsPanel(cfg, MODELS_DIR)
+        settings_layout.addWidget(self.settings)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         viewer = QWidget()
@@ -239,6 +297,14 @@ class MainWindow(QMainWindow):
 
         self.status_label = QLabel("")
         self.statusBar().addWidget(self.status_label, 1)
+        # One-off results ("Saved: ...") get their own label: the next frame cannot
+        # overwrite them, and they clear themselves after a few seconds.
+        self.notice_label = QLabel("")
+        self.statusBar().addPermanentWidget(self.notice_label)
+        self._notice_timer = QTimer(self)
+        self._notice_timer.setSingleShot(True)
+        self._notice_timer.setInterval(_NOTICE_MS)
+        self._notice_timer.timeout.connect(self.notice_label.clear)
 
         self.open_file_button.clicked.connect(self._choose_file)
         self.open_folder_button.clicked.connect(self._choose_folder)
@@ -250,6 +316,8 @@ class MainWindow(QMainWindow):
         self.slider.valueChanged.connect(self._slider_moved)
         self.slider.sliderReleased.connect(self._slider_released)
         self.view.clicked.connect(self._view_clicked)
+        self.settings.changed.connect(self._settings_changed)
+        self.settings.save_requested.connect(self._save)
         QShortcut(QKeySequence(Qt.Key.Key_Space), self, self.toggle_pause)
 
     def _wire(self) -> None:
@@ -265,6 +333,8 @@ class MainWindow(QMainWindow):
         self._set_conf.connect(worker.set_conf)
         self._commit_still.connect(worker.commit_still)
         self._show_index.connect(worker.show_index)
+        self._apply.connect(worker.apply)
+        self._frame_shown.connect(worker.frame_shown)
         worker.model_ready.connect(self._model_ready)
         worker.model_failed.connect(self._model_failed)
         worker.frame_ready.connect(self._frame_ready)
@@ -277,7 +347,9 @@ class MainWindow(QMainWindow):
 
     def open_source(self, spec: str) -> None:
         """Open `spec` (the `detect.py --source` format); the worker stops the old one."""
-        self._pending = None
+        if self._pending is not None:
+            self._pending = None
+            self._frame_shown.emit()  # never painted, but the worker must not wait for it
         self._paused = False
         self.pause_button.setText("Pause")
         self.pause_button.setEnabled(False)
@@ -332,6 +404,42 @@ class MainWindow(QMainWindow):
         if self._payload is not None and not self._payload.is_stream:
             self._commit_still.emit()
 
+    def _settings_changed(self, cfg: Config) -> None:
+        """A panel change goes to the worker at once; a new model or imgsz reloads it."""
+        old = self._sent.model
+        if (cfg.model.weights, cfg.model.imgsz) != (old.weights, old.imgsz):
+            if not self._loading:
+                self._status_before_loading = self.status_label.text()
+            self._loading = True
+            self._set_status(LOADING_TEXT)
+        self._sent = cfg
+        self._applies_pending += 1
+        self._apply.emit(cfg)
+
+    def _session_config(self) -> Config:
+        """The config the panel last sent, with the threshold the slider shows."""
+        conf = self.slider.value() / _SLIDER_SCALE
+        return dataclasses.replace(self._sent, model=dataclasses.replace(self._sent.model, conf=conf))
+
+    def _save(self) -> None:
+        """Write the settings that differ from `config.yaml` into it; nothing else changes."""
+        try:
+            values = unsaved_values(self._session_config(), load_config(CONFIG_PATH), MODELS_DIR)
+            if values:
+                save_values(CONFIG_PATH, values)
+        except (ConfigError, OSError) as err:
+            self._warn(str(err))
+            return
+        except yaml.YAMLError:
+            self._warn(not_yaml_text(CONFIG_PATH))
+            return
+        self._notice(saved_text(values))
+
+    def _end_loading(self) -> None:
+        if self._loading:
+            self._loading = False
+            self._set_status(self._status_before_loading or MODEL_READY_TEXT)
+
     @staticmethod
     def _conf_text(value: int) -> str:
         return f"{value / _SLIDER_SCALE:.2f}"
@@ -341,12 +449,14 @@ class MainWindow(QMainWindow):
     def _model_ready(self, names: dict) -> None:
         self._model_loaded = True
         self._set_open_enabled(True)
-        if self._payload is None:
-            self._set_status("Model ready")
+        self.settings.set_class_names(names)
+        self._end_loading()
 
     def _model_failed(self, sentence: str) -> None:
-        # After a failed switch the old model keeps running; only a first load
-        # that fails leaves nothing to open a source with.
+        # After a failed switch the old model keeps running (the worker's
+        # `applied` puts it back in the panel); only a model that never loaded
+        # leaves nothing to open a source with.
+        self._end_loading()
         if not self._model_loaded:
             self._set_open_enabled(False)
             self._set_status(sentence)
@@ -357,9 +467,12 @@ class MainWindow(QMainWindow):
 
     def _frame_ready(self, payload: FramePayload) -> None:
         if self._live_generation != self._generation:
-            return  # queued by the source this window has already left
+            self._frame_shown.emit()  # done with it: queued by a source already left
+            return
         # Keep only the newest; one paint per queued request, never starved.
         first = self._pending is None
+        if not first:
+            self._frame_shown.emit()  # the one it replaces will never be painted
         self._pending = payload
         if first:
             self._present_requested.emit()
@@ -381,6 +494,7 @@ class MainWindow(QMainWindow):
             f"{payload.index + 1} / {payload.total}" if stills and payload.total > 1 else ""
         )
         self._set_status(self._status_text(payload))
+        self._frame_shown.emit()  # painted: the worker may send the next one
 
     def _event(self, line: str) -> None:
         self.events_list.appendPlainText(line)
@@ -400,7 +514,13 @@ class MainWindow(QMainWindow):
         self._set_status(summary)
 
     def _applied(self, cfg: Config) -> None:
+        # What the session really runs on: after a model that would not load or a
+        # class the model does not know, the old values -- the panel shows them too.
         self._cfg = cfg
+        self._applies_pending = max(0, self._applies_pending - 1)
+        if self._applies_pending == 0:
+            self._sent = cfg  # answered in full: a reverted value is the one in force
+        self.settings.set_config(cfg)
         self.table.setColumnHidden(_COLOUR_COLUMN, not cfg.display.color)
 
     # --- drawing ----------------------------------------------------------------------
@@ -448,6 +568,10 @@ class MainWindow(QMainWindow):
 
     def _set_status(self, text: str) -> None:
         self.status_label.setText(text)
+
+    def _notice(self, text: str) -> None:
+        self.notice_label.setText(text)
+        self._notice_timer.start()
 
     def _set_open_enabled(self, enabled: bool) -> None:
         for button in (self.open_file_button, self.open_folder_button, self.open_camera_button):

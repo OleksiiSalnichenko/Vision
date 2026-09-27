@@ -72,6 +72,11 @@ class PipelineWorker(QObject):
     the user has to be told, `finished(summary)` when a stream is over (the
     line `output.print_stream_summary` prints), and `applied(Config)` with the
     config the session actually runs after `apply`.
+
+    The UI calls `frame_shown()` once for every `frame_ready` it has taken.
+    Until then the worker keeps processing and writing every frame but sends
+    none, holding only the newest: at most one unshown frame is ever in flight
+    (plus a stream's last frame at its natural end).
     """
 
     model_ready = Signal(object)  # dict[int, str]; a Qt dict would drop the int keys
@@ -109,6 +114,10 @@ class PipelineWorker(QObject):
         self._frames: Iterator[Frame] | None = None
         self._paused = False
         self._last_frame: Frame | None = None  # the stream frame on screen
+        # Display pacing: payloads sent but not yet acknowledged by `frame_shown`,
+        # and the newest frame waiting for that acknowledgement.
+        self._unshown = 0
+        self._held: FramePayload | None = None
 
     # --- the model -----------------------------------------------------------
 
@@ -188,6 +197,7 @@ class PipelineWorker(QObject):
         rule_set, self._rule_set = self._rule_set, None
         self._paused = False
         self._last_frame = None
+        self._held = None  # an explicit stop drops it: the UI has moved on
         self._reset_stills()
         try:
             if frames is not None:
@@ -267,7 +277,7 @@ class PipelineWorker(QObject):
         raise ValueError(f"no photo number {index} in the source")
 
     def _emit_still(self, still: Frame, result: pipeline.StillResult) -> None:
-        self.frame_ready.emit(FramePayload(
+        self._post(FramePayload(
             canvas=result.canvas.copy(), drawn=_copies(result.drawn),
             near_miss_count=len(result.near_miss), target_track_id=None,
             index=still.index, total=len(self._source), fps=0.0,
@@ -320,6 +330,7 @@ class PipelineWorker(QObject):
         try:
             frame = next(self._frames)
         except StopIteration:
+            self._flush()  # a finished video leaves its last frame on screen
             self.stop()
             return
         except OSError as err:  # the camera stopped delivering frames
@@ -343,7 +354,7 @@ class PipelineWorker(QObject):
 
     def _emit_stream(self, frame: Frame, result: pipeline.StreamResult) -> None:
         target = result.target.detection
-        self.frame_ready.emit(FramePayload(
+        self._post(FramePayload(
             canvas=result.canvas.copy(), drawn=_copies(result.drawn),
             near_miss_count=len(result.near_miss),
             target_track_id=None if target is None else target.track_id,
@@ -357,8 +368,36 @@ class PipelineWorker(QObject):
             self._emit_stream(self._last_frame, self._session.redraw())
 
     def _fail(self, sentence: str) -> None:
+        self._flush()
         self.failed.emit(sentence)
         self.stop()
+
+    @Slot()
+    def frame_shown(self) -> None:
+        """The UI is done with one payload; the newest held one, if any, goes out now."""
+        self._unshown = max(0, self._unshown - 1)
+        if self._unshown == 0 and self._held is not None:
+            held, self._held = self._held, None
+            self._post(held)
+
+    def _post(self, payload: FramePayload) -> None:
+        """Send a frame to the UI, or hold it while the UI has not taken the last one.
+
+        Every frame is processed and written regardless; only the display is
+        coalesced, so an unpaced video never floods the UI thread's queue.
+        """
+        if self._unshown:
+            self._held = payload  # a newer one replaces the older unsent one
+            return
+        self._unshown += 1
+        self.frame_ready.emit(payload)
+
+    def _flush(self) -> None:
+        """At a stream's natural end: its last frame goes out even while one is unshown."""
+        held, self._held = self._held, None
+        if held is not None:
+            self._unshown += 1
+            self.frame_ready.emit(held)
 
     @Slot(bool)
     def set_paused(self, paused: bool) -> None:
