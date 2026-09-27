@@ -23,6 +23,7 @@ display:
   show_offsets: true
   crosshair: true
   center_line: false    # line between the frame centre and each object centre
+  color: false          # dominant colour per object, as the --color flag does
 
 output:
   save_json: true

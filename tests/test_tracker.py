@@ -150,6 +150,36 @@ def test_a_near_miss_holds_a_track_but_never_starts_one(tracker, cfg):
         assert tracker.update(frame(n), [person(n), stray])[1].track_id is None
 
 
+def test_set_conf_lets_a_dimmer_object_start_a_track_and_keeps_the_ids(tracker, cfg):
+    dim_score = near_miss(cfg)  # below the loaded `model.conf`, above `conf_debug`
+    lowered = (cfg.model.conf_debug + dim_score) / 2  # between conf_debug and the dim score
+
+    before = None
+    for n in range(4):
+        stray = replace(bottle(n), conf=dim_score)
+        before = tracker.update(frame(n), [person(n), phone(n), stray])
+        assert before[2].track_id is None
+
+    tracker.set_conf(lowered)
+
+    bottle_ids = set()
+    for n in range(4, 8):
+        stray = replace(bottle(n), conf=dim_score)
+        after = tracker.update(frame(n), [person(n), phone(n), stray])
+        assert [d.track_id for d in after[:2]] == [d.track_id for d in before[:2]]
+        if n >= 5:  # a track is confirmed on its second sighting
+            bottle_ids.add(after[2].track_id)
+
+    assert len(bottle_ids) == 1 and None not in bottle_ids
+    assert bottle_ids.isdisjoint({d.track_id for d in before[:2]})
+
+    # The low band stays at `conf_debug`: below the new `conf` but above
+    # `conf_debug`, an existing track still holds through a dim frame.
+    person_id = before[0].track_id
+    dimmer = replace(person(8), conf=(cfg.model.conf_debug + lowered) / 2)
+    assert tracker.update(frame(8), [dimmer, phone(8)])[0].track_id == person_id
+
+
 def test_reset_starts_the_numbering_again(tracker):
     first = tracker.update(frame(0), [person(0), phone(0)])
     for n in range(1, 6):

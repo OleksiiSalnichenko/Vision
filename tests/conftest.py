@@ -24,7 +24,7 @@ if str(PROJECT_ROOT) not in sys.path:
 # project adds (display.center_line, capture.camera, capture.count,
 # capture.interval and the whole bench section, added by task 06 for bench.py
 # and scripts/grab.py; the tracker and rules sections, added by the phase-2
-# spec, decision 17). Listed by hand from the documents, never read back from
+# spec, decision 17; display.color, added by the phase-3 spec). Listed by hand from the documents, never read back from
 # `core.config`: the keys and their types are the spec's, the values are the
 # user's to tune.
 #
@@ -44,6 +44,7 @@ CONFIG_SCHEMA: dict[str, Any] = {
         "show_offsets": True,
         "crosshair": False,
         "center_line": True,
+        "color": True,
     },
     "output": {
         "save_json": False,

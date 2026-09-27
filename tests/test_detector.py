@@ -115,5 +115,68 @@ def test_openmp_threads_are_told_not_to_spin_before_torch_loads():
     assert result.stdout.split() == ["0", "False"]
 
 
+STUB_NAMES = {0: "person", 1: "bicycle", 39: "bottle", 67: "cell phone"}
+
+
+class _StubYOLO:
+    """Stands in for `ultralytics.YOLO`: knows its class names, records `predict`."""
+
+    def __init__(self, path):
+        self.names = dict(STUB_NAMES)
+        self.predicted_classes = []
+
+    def predict(self, image, **kwargs):
+        self.predicted_classes.append(kwargs["classes"])
+        return []
+
+
+@pytest.fixture
+def stub_detector(tmp_path, write_config, monkeypatch):
+    """A `Detector` over a stub model, whitelisted to `person` and `bottle`."""
+    stub = types.ModuleType("ultralytics")
+    stub.YOLO = _StubYOLO
+    monkeypatch.setitem(sys.modules, "ultralytics", stub)
+    weights = tmp_path / "stub.pt"
+    weights.write_bytes(b"not a model")
+    cfg = load_config(
+        write_config({"model.weights": str(weights), "classes": ["person", "bottle"]})
+    )
+    return Detector(cfg)
+
+
+def _classes_sent_to_the_model(detector):
+    import numpy as np
+
+    from core.types import Frame
+
+    detector(Frame(image=np.zeros((8, 8, 3), dtype=np.uint8), source="stub", index=0))
+    return detector._model.predicted_classes[-1]
+
+
+def test_names_are_the_models_own(stub_detector):
+    assert stub_detector.names == STUB_NAMES
+
+
+def test_set_classes_changes_the_filter_on_the_next_frame(stub_detector):
+    assert _classes_sent_to_the_model(stub_detector) == [0, 39]
+
+    stub_detector.set_classes(["cell phone"])
+
+    assert _classes_sent_to_the_model(stub_detector) == [67]
+
+
+def test_set_classes_with_an_empty_list_means_every_class(stub_detector):
+    stub_detector.set_classes([])
+
+    assert _classes_sent_to_the_model(stub_detector) is None
+
+
+def test_set_classes_refuses_an_unknown_name_and_keeps_the_filter(stub_detector):
+    with pytest.raises(ValueError):
+        stub_detector.set_classes(["person", "unicorn"])
+
+    assert _classes_sent_to_the_model(stub_detector) == [0, 39]
+
+
 def _refuse(*args, **kwargs):
     raise AssertionError("YOLO must not be touched when the weights file is missing")

@@ -79,6 +79,17 @@ class Tracker:
 
         return [replace(det, track_id=ids.get(i)) for i, det in enumerate(detections)]
 
+    def set_conf(self, conf: float) -> None:
+        """Move ByteTrack's confident and new-track bands to `conf`, mid-stream.
+
+        For a threshold changed while a stream runs: an object drawn at the new
+        `conf` must also be able to start a track, or it could never become a
+        target or fire a rule. Existing tracks and the id counter are kept; the
+        low band stays at `model.conf_debug`.
+        """
+        self._tracker.args.track_high_thresh = conf
+        self._tracker.args.new_track_thresh = conf
+
     def reset(self) -> None:
         """Forget every track and start numbering again, for a new stream."""
         self._tracker.reset()

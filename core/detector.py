@@ -121,6 +121,20 @@ class Detector:
         self._model = YOLO(str(weights))
         self._class_ids = _whitelist_ids(self._model.names, cfg.classes)
 
+    @property
+    def names(self) -> dict[int, str]:
+        """Every class the loaded model knows, id to name (a copy)."""
+        return dict(self._model.names)
+
+    def set_classes(self, classes: list[str]) -> None:
+        """Replace the class whitelist; it applies from the next frame.
+
+        The filter is handed to the model on every `predict`, so no reload is
+        needed. An empty list means every class. An unknown name raises the
+        same `ValueError` the constructor does and leaves the filter as it was.
+        """
+        self._class_ids = _whitelist_ids(self._model.names, classes)
+
     def __call__(self, frame: Frame) -> list[Detection]:
         """Return every detection at or above `conf_debug`, best first.
 
