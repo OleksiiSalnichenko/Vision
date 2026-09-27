@@ -86,7 +86,7 @@ object list, threshold slider. `ui/` imports `core/`, never the reverse.»
 |---|-------|---------|---------|
 | 28 | R08 | Як користувач, я бачу у вікні панель «Settings» (завжди відкрита, поряд із переглядом): модель, `imgsz`, класи, колір, лінія до центру | стартові значення — з `config.yaml` |
 | 29 | R08.1, R28 | …модель вибираю зі списку того, що лежить у `models\`: `*.pt` і теки `*_openvino_model` | поточне значення показане, навіть якщо файлу немає; жодних «профілів» моделі — це просто шлях |
-| 30 | R08.2, R27 | …класи вибираю галочками зі списку класів завантаженої моделі; жодної галочки = всі 80 | порожній список = всі, як у `config.yaml` |
+| 30 | R08.2, R27 | …класи вибираю галочками зі списку класів завантаженої моделі; жодної галочки = всі 80 | порожній список = всі, як у `config.yaml`. Ім'я з whitelist, якого модель не знає (друкарська помилка в `config.yaml`), лишається в списку позначеним; робітник відповідає повідомленням `unknown class names in config: …`, фільтр лишається попередній, панель повертається до попереднього набору |
 | 31 | R08.3, R33 | …колір — галочка, як прапорець `--color`; зберігається новим ключем `display.color` | `display.color: false` у `config.yaml`; `detect.py` малює колір, коли стоїть прапорець **або** ключ — без ключа (false) поведінка CLI та сама |
 | 32 | R16i | …кожна зміна діє одразу, без кнопки «Apply», на поточний сеанс | колір, лінія до центру, класи — з наступного кадру, модель не перевантажується; модель і `imgsz` — модель перевантажується у фоні (рядок стану «Loading model…»), потік чекає і продовжує з тими ж треками; фото перераховується. `imgsz` застосовується, коли поле втратило фокус або Enter |
 | 33 | R16i.1 | …кнопка «Save to config.yaml» записує в файл значення, які відрізняються від файлу: з набору `model.weights`, `model.imgsz`, `model.conf` (з повзунка), `classes`, `display.center_line`, `display.color` | рядок стану «Saved: model.conf, classes» або «Nothing to save»; коментарі, закоментовані рядки й порядок ключів лишаються; файл перевіряється `load_config` до заміни, при помилці не змінюється |
@@ -215,15 +215,16 @@ config.yaml записує змінені значення» з кольором
 
 | Модуль | Володіє | Виставляє | Ховає |
 |---|---|---|---|
-| `core/pipeline.py` (новий) | порядок кадру для фото і потоку; єдиний викликач `is_debug`; виконання дій правил | `prepare_rules(rules_path: Path, handlers_path: Path) -> RuleSet`; `StillResult(canvas, drawn, near_miss, detections)` (frozen; `detections` — усі від `conf_debug`); `process_still(frame, detector, cfg, want_color) -> StillResult`; `resplit_still(frame, detections, cfg, want_color) -> StillResult` (без моделі — для повзунка); `save_still(source: str, result, cfg) -> list[Path]`; `StreamResult(canvas, drawn, near_miss, target, events, status)` (frozen); `StreamSession(detector, cfg, rule_set, fps, frame_size, is_video, on_log: Callable[[Event], None], want_color)` — контекстний менеджер: `step(frame) -> StreamResult`, `click(point)`, `retune(cfg, want_color)` (новий сеансовий конфіг: поріг → `Tracker.set_conf`, дисплей, колір; треки не скидаються), `set_detector(detector)`, `close() -> list[Path]` (ідемпотентний), `frames`, `fired`. `want_color` у CLI = `args.color or cfg.display.color` | трекер, ціль, двигун правил, `StreamWriter`, FPS-вікно, `_act`, `_status`, `_add_colors` |
-| `detect.py` | прапорці, консоль, коди виходу | те саме, що зараз: `main`, `parse_args`, `with_overrides`, `process`, `run_images`, `run_stream`, `prepare_rules(cfg)` (обгортка, читає `HANDLERS_PATH` у момент виклику), `Window`, `configure_console`, `CONFIG_PATH`, `HANDLERS_PATH`, `PROJECT_ROOT`, `EXIT_*` | — |
+| `core/pipeline.py` (новий) | порядок кадру для фото і потоку; єдиний викликач `is_debug`; виконання дій правил | `prepare_rules(rules_path: Path, handlers_path: Path) -> RuleSet`; `StillResult(canvas, drawn, near_miss, detections)` (frozen; `detections` — усі від `conf_debug`); `process_still(frame, detector, cfg, want_color) -> StillResult`; `resplit_still(frame, detections, cfg, want_color) -> StillResult` (без моделі — для повзунка); `save_still(source: str, result, cfg) -> list[Path]`; `StreamResult(canvas, drawn, near_miss, target, events, status)` (frozen); `StreamSession(detector, cfg, rule_set, fps, frame_size, is_video, on_log: Callable[[Event], None], want_color)` — контекстний менеджер: `step(frame) -> StreamResult`, `click(point)`, `retune(cfg, want_color)` (новий сеансовий конфіг: поріг → `Tracker.set_conf`, дисплей, колір; треки не скидаються), `set_detector(detector)`, `redraw() -> StreamResult` (останній кадр заново: поділ під поточний конфіг, ціль, накладка — без детектора, без правил і без запису; для паузи — D01, таск 03), `close() -> list[Path]` (ідемпотентний), `frames`, `fired`. `want_color` у CLI = `args.color or cfg.display.color` | трекер, ціль, двигун правил, `StreamWriter`, FPS-вікно, `_act`, `_status`, `_add_colors` |
+| `detect.py` | прапорці, консоль, коди виходу | те саме, що зараз: `main`, `parse_args`, `with_overrides`, `process`, `run_images`, `run_stream`, `prepare_rules(cfg)` (обгортка, читає `HANDLERS_PATH` у момент виклику), `Window`, `configure_console`, `CONFIG_PATH`, `HANDLERS_PATH`, `PROJECT_ROOT`, `EXIT_*`; нове — `want_color(args, cfg)` | — |
+| `core/output.py` | + текст рядка події й підсумку без друку (D01, таск 03) | + `format_event(event) -> str`, `format_summary(frames, events, paths) -> str`; `print_event` / `print_stream_summary` друкують саме їх | — |
 | `core/tracker.py` | + межі ByteTrack на льоту | + `Tracker.set_conf(conf: float)` | як ByteTrack зберігає аргументи |
 | `core/detector.py` | + імена класів моделі, фільтр класів на льоту | + `Detector.names -> dict[int, str]`, + `Detector.set_classes(classes: list[str]) -> None` | модель |
 | `core/config.py` | + запис значень у файл; + ключ `display.color` | + `save_values(path, values: dict[str, Any]) -> None`, `ConfigError`; `DisplayConfig.color: bool` | порядкове редагування, тимчасовий файл |
 | `ui/worker.py` | модель, джерело, сеанс — у фоновому потоці | `PipelineWorker(cfg, detector_factory, source_factory)` (QObject). Слоти: `load_model()`, `open_source(spec)`, `stop()`, `set_paused(bool)`, `click(x, y)`, `set_conf(float)`, `commit_still()` (переписати файли поточного фото — коли повзунок відпущено), `show_index(i)` (тека: Prev/Next), `apply(cfg)` (новий сеансовий `Config`; робітник сам вирішує: перезавантажити модель, `set_classes` чи лише передати конфіг у сеанс). Сигнали: `model_ready(names: dict)`, `model_failed(str)`, `frame_ready(FramePayload)` (фото і потік), `event(str)`, `failed(str)`, `finished(str)` | цикл кадрів, прапорці стоп/пауза, кеш фото |
 | `ui/view.py` | показ кадру і клік | `FrameView` (віджет): `show_image(ndarray)`, сигнал `clicked(x, y)` у пікселях кадру; `to_image_point(...)` — чиста функція | масштабування, поля |
 | `ui/main_window.py` | вікно: джерела, перегляд, повзунок, таблиця, події, рядок стану | `MainWindow(cfg, worker_factory)` | розкладку |
-| `ui/settings_panel.py` | панель налаштувань | `SettingsPanel(cfg, models_dir)`; `set_class_names(names)`; сигнали `changed(Config)`, `save_requested()` | віджети |
+| `ui/settings_panel.py` | панель налаштувань | `SettingsPanel(cfg, models_dir)`; `set_class_names(names)`; `set_config(cfg)`; `config()`; сигнали `changed(Config)`, `save_requested()`; допоміжні `model_choices(models_dir, current)`, `is_openvino(weights)` | віджети |
 | `app.py` | точка входу | `main(argv=None) -> int` | — |
 
 `FramePayload` (frozen dataclass у `ui/worker.py` — дані для UI-потоку, не віджет):
@@ -241,6 +242,12 @@ config.yaml записує змінені значення» з кольором
    `Source.close`.
 
 Плюс чисті функції (`to_image_point`, `save_values`) напряму.
+
+**Поправка D01 (таск 03).** Збірка показала дві дірки в межах: (1) на паузі клік чи
+повзунок мусять перемалювати показаний кадр, а `StreamSession` уміла лише `step` з
+новим кадром — додано `redraw()`; (2) рядок події для панелі «Events» можна було взяти
+лише перехопленням stdout (`print_event` друкує), а це підміна глобального stdout з
+фонового потоку — додано `format_event` / `format_summary` у `core/output.py`.
 
 ## Поза рамками
 

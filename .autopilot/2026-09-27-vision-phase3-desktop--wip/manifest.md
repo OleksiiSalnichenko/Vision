@@ -52,7 +52,7 @@
 | R21 | «\| 3 — app \| `ui/` (PySide6, imports `core/` as a library) \| nothing \|» (ARCH §6) | in-ticket | — | spec Рішення: конвеєр; Пропозиції до ARCH 1 → T02 |
 | R22 | «Fully offline at runtime. The network is used exactly twice in the whole project: `pip install`, and a one-time weight download. Never at inference time.» | in-ticket | — | spec ІС 42 → T06 |
 | R23 | «Code, comments, logs, README, UI strings \| all English» | in-ticket | — | spec ІС 43 → T04, 06 |
-| R24 | «Every tunable number lives in `config.yaml`, never as a constant in code.» (ARCH §3) | in-ticket | — | spec ІС 44 → T01 |
+| R24 | «Every tunable number lives in `config.yaml`, never as a constant in code.» (ARCH §3) | done | — | spec ІС 44 → T01 |
 | R25 | «Confidence \| display/events at 0.5; JSON also records everything down to 0.25» | in-ticket | — | spec ІС 27 → T02 |
 | R26 | «Do not skip `conf_debug`. Recording near-miss detections between 0.25 and 0.5 in the JSON is the main debugging tool for a missed object.» | in-ticket | — | spec ІС 22 → T02, 04 |
 | R27 | «Classes \| whitelist in `config.yaml`, not all 80 COCO classes» | in-ticket | — | spec ІС 30 → T01, 05 |
@@ -63,6 +63,12 @@
 | R32 | «If something in `ARCHITECTURE.md` turns out to be wrong once code exists, say so and propose the change rather than quietly working around it.» | in-ticket | — | spec Пропозиції до ARCH → T02 |
 | R33 | «Colour attribute \| in phase 1, but behind a `--color` flag, in its own module» | in-ticket | — | spec ІС 31 → T01, 02, 05 |
 | R34i | *(мається на увазі)* UI має тести без моделі, без камери і без живого дисплея — продовження шву з фаз 1–2 | in-ticket | — | spec ІС 45; шви → T03, 05, 06 |
+
+## Відкрито збіркою
+
+| ID | Що довела збірка | Статус | Підстава | Де |
+|----|------------------|--------|-----------|-----|
+| D01 | Перемалювати кадр на паузі (клік, повзунок) без нового кадру `StreamSession` не вміла; рядок події без друку `core/output.py` не давав | in-ticket | таск 03 повернув BLOCKED: робітник мусив би підміняти глобальний stdout і не міг перемалювати паузу. Додано `StreamSession.redraw()` і `output.format_event`/`format_summary`, зона таска 03 розширена на `core/pipeline.py`, `core/output.py`. Служить A01, R15i, R10 | spec «Межі та шви», поправка D01 → T03 |
 
 ## Поза обсягом
 

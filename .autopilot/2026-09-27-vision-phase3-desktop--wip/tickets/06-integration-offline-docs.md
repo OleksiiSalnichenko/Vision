@@ -13,7 +13,9 @@
    без кнопки «Apply». `model_ready(names)` → `set_class_names`. Модель не завантажилась
    (`model_failed`) → повідомлення + `set_config` зі старим конфігом. Поки модель
    перевантажується — «Loading model…» у рядку стану. Повзунок і панель — один сеансовий
-   `Config`.
+   `Config`. Невідоме моделі ім'я класу (панель лишає його позначеним, `set_classes` дає
+   `ValueError`) — повідомлення з реченням помилки, фільтр робітника не змінюється,
+   панель — `set_config` з попереднім конфігом (історія 30).
 2. **«Save to config.yaml».** Порівняти сеансовий конфіг із файлом (`load_config(CONFIG_PATH)`)
    за набором `model.weights`, `model.imgsz`, `model.conf` (повзунок), `classes`,
    `display.center_line`, `display.color`; записати лише різницю через
