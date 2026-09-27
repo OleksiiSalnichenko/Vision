@@ -139,6 +139,52 @@
   `set_conf` одразу дають новий `frame_ready`. Будь-яка помилка кадру, крім запису, —
   `failed` і кінець потоку, застосунок живий
 
+### З таска 04 — головне вікно
+
+- `ui.view`: `to_image_point(widget_point, widget_size, image_size) -> (x, y) | None`;
+  `fit_rect(widget_size, image_size) -> (left, top, w, h) | None`; `to_qimage(canvas) ->
+  QImage`; `FrameView(placeholder, parent=None)` — `show_image(ndarray)`, `clear()`,
+  `has_image()`, `image_size()`, `placeholder`, сигнал `clicked(float, float)` у пікселях кадру
+- `ui.main_window.MainWindow(cfg, worker_factory: Callable[[Config], PipelineWorker])`;
+  `open_source(spec)`, `toggle_pause()`. Публічні атрибути: `worker`, `worker_thread`,
+  `view`, `slider`, `slider_value`, `table`, `objects`, `no_objects_label`,
+  `near_miss_label`, `events_list`, `status_label`, `position_label`, `camera_box`,
+  `open_file_button`, `open_folder_button`, `open_camera_button`, `stop_button`,
+  `pause_button`, `prev_button`, `next_button`, **`settings_area`** — порожній
+  `QVBoxLayout` під панель налаштувань (таск 06)
+- Константи `WINDOW_TITLE`, `EMPTY_VIEW_TEXT`, `NO_OBJECTS_TEXT`, `LOADING_TEXT`,
+  `TARGET_MARK`, `COLUMNS`; `near_miss_text(n)`, `file_filter()`
+- `worker.applied` → `window._applied` (зберігає cfg, показує колонку colour при
+  `display.color`). Тести підміняють `main_window.QMessageBox` фейковим класом — модальних
+  вікон у тестах немає
+- `app.main(argv=None) -> int`, `parse_args(argv)`, `make_worker(cfg) ->
+  PipelineWorker(cfg, Detector, Source)`; `--source` стає в чергу за `load_model`.
+  Битий YAML — одне речення, `EXIT_USAGE`
+- Кадри зливаються: малюється лише найсвіжіший payload раз на оберт циклу подій.
+  `closeEvent` — `QThread.wait()` без тайм-ауту
+
+### З таска 06 — налаштування у вікні, збереження
+
+- `MainWindow.settings` — `SettingsPanel` у `settings_area`, завжди активна
+- `ui.main_window.MODELS_DIR = PROJECT_ROOT / "models"`, `CONFIG_PATH` з `detect` (тести
+  підміняють обидва)
+- `unsaved_values(session: Config, on_disk: Config, models_dir) -> dict[str, Any]` —
+  `model.weights` (за `model_entry`), `model.imgsz`, `model.conf` (у сотих повзунка),
+  `classes`, `display.center_line`, `display.color`; `saved_text(keys) -> str`;
+  `MODEL_READY_TEXT`, `NOTHING_TO_SAVE_TEXT`
+- Проводка: `_apply(object)` → `worker.apply`; `model_ready` → `set_class_names`;
+  `applied` → `settings.set_config` (невдала модель чи невідомий клас повертають панель)
+- Ремонт 1: **`PipelineWorker.frame_shown()`** — новий слот; UI кличе його раз на кожен
+  прийнятий `frame_ready` (показаний, замінений новішим чи відкинутий як старий), інакше
+  нових кадрів не буде. Поки кадр не підтверджено, робітник тримає лише найновіший; кожен
+  кадр і далі обробляється, пишеться і йде в правила. На природному кінці потоку останній
+  кадр надсилається завжди; stop/open відкидає притриманий
+- `MainWindow.notice_label` — результат Save, зникає через `_NOTICE_MS`; `MainWindow._sent`
+  — конфіг, який панель надіслала останнім (з ним порівнюють Save і «Loading model…»)
+- `app.not_yaml_text(path) -> str` — єдине місце речення про невалідний YAML
+- `tests/test_offline_ui.py` — підпроцес, сокети в пастці, справжня модель з `config.yaml`;
+  `tests/test_ui_boundaries.py` — `core/` без Qt/`ui`, без кирилиці в `ui/` і `app.py`
+
 ### З таска 05 — панель налаштувань і Qt
 
 - Встановлено у venv: PySide6 6.11.2, pytest-qt 4.5.0 (`requirements.txt`). Тести Qt
