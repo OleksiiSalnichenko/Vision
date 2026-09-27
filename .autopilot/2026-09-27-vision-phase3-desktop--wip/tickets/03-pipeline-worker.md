@@ -2,7 +2,7 @@
 
 **Вимоги:** R13i, R17i, R18i, R05, R05.1, R05.2, R05.3, R06, R06.1, R06.2, R10, R10.1, R10.2, R10.3, R16i, R19i, R34i, A01
 **Blocked by:** 02, 05
-**Зона:** `ui/worker.py` · `tests/test_ui_worker.py` · після D01 ще `core/pipeline.py` (+ `redraw`) · `core/output.py` (+ `format_event`, `format_summary`) · `tests/test_pipeline.py` · `tests/test_output.py`
+**Зона:** `ui/worker.py` · `tests/test_ui_worker.py` · після D01 ще `core/pipeline.py` (+ `redraw`) · `core/output.py` (+ `format_event`, `format_summary`) · `tests/test_pipeline.py` · `tests/test_output.py` · після ремонту 1 ще `core/target.py` (`choose(..., new_frame)`) · `tests/test_target.py`
 **Хвиля:** 3
 **Status:** ready
 

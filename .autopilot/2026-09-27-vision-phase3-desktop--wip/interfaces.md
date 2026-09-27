@@ -116,7 +116,11 @@
 - `StreamSession.redraw() -> StreamResult` — останній кадр під поточний конфіг і захоплення
   цілі; без детектора, без правил, без запису; `events == ()`, `frames`/`fired` не
   змінюються; до першого `step` — `RuntimeError("no frame to redraw yet")`.
-  `StreamSession.fps -> float` (лише читання)
+  `StreamSession.fps -> float` (лише читання). Ремонт 1: `redraw` не рахується кадром для
+  відпускання цілі — `core.target.Targeting.choose(detections, frame_size, new_frame: bool =
+  True)`, з `new_frame=False` лічильник втрати не міняється; поділ → колір → ціль → стан →
+  накладка — лише в приватному `StreamSession._render`; `FramePayload.drawn` — копії
+  `Detection`
 - `core.output.format_event(event) -> str`, `format_summary(frames, events, paths) -> str`;
   `print_event` / `print_stream_summary` друкують саме їх
 - `ui.worker.FramePayload(canvas, drawn, near_miss_count, target_track_id, index, total,
