@@ -128,12 +128,7 @@ def serve(state):
         return "віддалена сесія — без сервера"
 
     port, pid = recorded()
-    # На Windows/MSYS `ps -o command=` нічого не повертає, тому перевірити
-    # командний рядок чужого pid неможливо. Порт узятий з нашого ж pid-файла
-    # і відповідає на /dashboard.html — цього тут досить. Без цієї гілки
-    # кожен виклик піднімав новий сервер на новому порту (2026-09-21).
-    if port and http_ok(port) and (not pid or is_ours(cmdline(pid))
-                                   or (os.name == "nt" and not cmdline(pid))):
+    if port and http_ok(port) and (not pid or is_ours(cmdline(pid))):
         return "сервер живий: http://localhost:%d/dashboard.html" % port
 
     # Осиротілі сервери цього ж каталогу: їх ніхто не вб'є, крім нас, і
