@@ -143,3 +143,17 @@ def test_a_track_back_in_time_keeps_the_lock_and_restarts_the_count(targeting, c
     for _ in range(cfg.tracker.track_buffer):
         state = targeting.choose([CENTRAL], FRAME_SIZE)
     assert (state.detection, state.locked, state.lost) == (None, True, True)
+
+
+def test_choosing_again_on_the_same_frame_never_counts_toward_the_release(targeting, cfg):
+    targeting.click((470, 240), [RIGHT, CENTRAL])
+    # A paused video drawn over and over: the same frame, not new ones.
+    for _ in range(cfg.tracker.track_buffer + 5):
+        state = targeting.choose([CENTRAL], FRAME_SIZE, new_frame=False)
+        assert (state.detection, state.locked, state.lost) == (None, True, True)
+
+    back = targeting.choose([CENTRAL, RIGHT], FRAME_SIZE, new_frame=False)
+    assert (back.detection, back.locked, back.lost) == (RIGHT, True, False)
+    # The frames that did count are still the only ones counted.
+    for _ in range(cfg.tracker.track_buffer):
+        assert targeting.choose([CENTRAL], FRAME_SIZE).lost is True

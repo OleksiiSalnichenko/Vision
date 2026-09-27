@@ -260,6 +260,8 @@ class StreamSession:
         self._writer: output.StreamWriter | None = None
         self._ticks: deque[float] = deque(maxlen=_FPS_WINDOW)
         self._on_screen: list[Detection] = []  # the drawn detections of the last frame
+        # The last frame and everything the tracker returned for it, for `redraw`.
+        self._last: tuple[Frame, list[Detection]] | None = None
         self._paths: list[Path] | None = None
         self.frames = 0  # frames recorded
         self.fired = 0  # rule events fired
@@ -282,15 +284,7 @@ class StreamSession:
         cfg = self._cfg
         self._ticks.append(time.perf_counter())
         detections = self._tracker.update(frame, self._detector(frame))
-        drawn = [item for item in detections if not is_debug(item, cfg)]
-        near_miss = [item for item in detections if is_debug(item, cfg)]
-        if self._want_color:
-            drawn = _add_colors(frame, drawn)
-
-        height, width = frame.image.shape[:2]
-        target = self._targeting.choose(drawn, (width, height))
-        status = _status(target, _fps(self._ticks))
-        canvas = draw.annotate(frame.image, drawn, cfg, target, status)
+        drawn, near_miss, target, status, canvas = self._render(frame, detections, new_frame=True)
 
         fired = []
         for event in self._engine.update(frame.time, drawn):
@@ -301,6 +295,7 @@ class StreamSession:
         with _writing():
             if self._writer is None:
                 # Named after the first frame, so a bare `0` still writes camera_0.
+                height, width = frame.image.shape[:2]
                 self._writer = output.StreamWriter(
                     frame.source, cfg, self._fps_in, self._frame_size or (width, height),
                     self._is_video,
@@ -308,11 +303,56 @@ class StreamSession:
             self._writer.write(frame, drawn, near_miss, target, canvas)
         self.frames += 1
 
-        self._on_screen = drawn
+        self._last = (frame, detections)
         return StreamResult(
             canvas=canvas, drawn=drawn, near_miss=near_miss, target=target,
             events=tuple(fired), status=status,
         )
+
+    def redraw(self) -> StreamResult:
+        """Draw the last frame again under the current config and target lock.
+
+        Its tracked detections are split under the current threshold, coloured
+        if asked, and the target is chosen again -- a click since the frame
+        shows at once. The detector is not called, no rule runs and nothing is
+        written: `frames`, `fired` and the files stay as they are. It is the
+        same frame again, so it never counts toward releasing a lock whose
+        target is absent -- however long a video stays paused. Raises
+        `RuntimeError` before the first `step`.
+        """
+        if self._last is None:
+            raise RuntimeError("no frame to redraw yet")
+        frame, detections = self._last
+        drawn, near_miss, target, status, canvas = self._render(frame, detections, new_frame=False)
+        return StreamResult(
+            canvas=canvas, drawn=drawn, near_miss=near_miss, target=target,
+            events=(), status=status,
+        )
+
+    def _render(
+        self, frame: Frame, detections: list[Detection], new_frame: bool
+    ) -> tuple[list[Detection], list[Detection], TargetState, str, np.ndarray]:
+        """Split, colour, choose the target, build the status line and draw one frame.
+
+        `new_frame` is False when the frame was rendered before: the target is
+        chosen again without counting a frame toward a lock's release.
+        """
+        cfg = self._cfg
+        drawn = [item for item in detections if not is_debug(item, cfg)]
+        near_miss = [item for item in detections if is_debug(item, cfg)]
+        if self._want_color:
+            drawn = _add_colors(frame, drawn)
+        height, width = frame.image.shape[:2]
+        target = self._targeting.choose(drawn, (width, height), new_frame=new_frame)
+        status = _status(target, self.fps)
+        canvas = draw.annotate(frame.image, drawn, cfg, target, status)
+        self._on_screen = drawn
+        return drawn, near_miss, target, status, canvas
+
+    @property
+    def fps(self) -> float:
+        """Frames per second over the last frames stepped, 0 until there are two."""
+        return _fps(self._ticks)
 
     def click(self, point: tuple[float, float]) -> None:
         """Lock onto the tracked box under `point` on the last frame, or release."""

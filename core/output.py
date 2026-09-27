@@ -257,14 +257,20 @@ class StreamWriter:
 
 
 def print_event(event: Any) -> None:
-    """Print one rule event: `[00:12.4] person_appeared  person #7 0.83  dx +120 dy -40`.
+    """Print one rule event: the line `format_event` builds."""
+    print(format_event(event))
+
+
+def format_event(event: Any) -> str:
+    """One rule event as a line: `[00:12.4] person_appeared  person #7 0.83  dx +120 dy -40`.
 
     `event` is a `core.rules.Event`; only `rule`, `time` and `detection` are
-    read, so this module does not import the rules engine.
+    read, so this module does not import the rules engine. The console and the
+    desktop app's event list show this same string.
     """
     detection = event.detection
     track = f" #{detection.track_id}" if detection.track_id is not None else ""
-    print(
+    return (
         f"[{_clock(event.time)}] {event.rule}  "
         f"{detection.cls_name}{track} {detection.conf:.2f}  "
         f"dx {detection.dx:+d} dy {detection.dy:+d}"
@@ -292,9 +298,14 @@ def write_event_frame(
 
 
 def print_stream_summary(frames: int, events: int, paths: Sequence[Path]) -> None:
+    """Print the one line a stream ends with: the line `format_summary` builds."""
+    print(format_summary(frames, events, paths))
+
+
+def format_summary(frames: int, events: int, paths: Sequence[Path]) -> str:
     """The one line a stream ends with: `N frames, M events, wrote a, b`."""
     wrote = ", ".join(str(path) for path in paths) if paths else "nothing"
-    print(f"{frames} frames, {events} events, wrote {wrote}")
+    return f"{frames} frames, {events} events, wrote {wrote}"
 
 
 def _clock(seconds: float) -> str:

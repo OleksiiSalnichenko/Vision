@@ -292,3 +292,88 @@ def test_an_oserror_from_the_detector_is_not_a_write_error(config, rule_set):
         run.step(stream_frame(0))
     run.close()
     assert not isinstance(raised.value, pipeline.StreamWriteError)
+
+
+# --- redraw --------------------------------------------------------------------
+
+
+def _jsonl_lines(path: Path) -> int:
+    return len(path.read_text(encoding="utf-8").splitlines())
+
+
+def test_redraw_before_any_frame_is_an_error(config, rule_set):
+    run = session(StubDetector([PERSON]), config(), rule_set)
+    with pytest.raises(RuntimeError, match="no frame to redraw"):
+        run.redraw()
+    run.close()
+
+
+def test_redraw_after_retune_draws_the_former_near_miss_without_the_model(
+    config, rule_set, tmp_path
+):
+    detector = StubDetector([PERSON, BOTTLE])
+    cfg = config()
+    run = session(detector, cfg, rule_set)
+    for index in range(3):
+        run.step(stream_frame(index))
+    lines = _jsonl_lines(tmp_path / "clip.jsonl")
+    files = sorted(p.name for p in tmp_path.rglob("*"))
+
+    run.retune(dataclasses.replace(cfg, model=dataclasses.replace(cfg.model, conf=0.28)),
+               want_color=False)
+    again = run.redraw()
+
+    assert sorted(d.cls_name for d in again.drawn) == ["bottle", "person"]
+    assert again.near_miss == []
+    assert again.events == ()
+    assert detector.calls == 3
+    assert (run.frames, run.fired) == (3, 1)
+    assert _jsonl_lines(tmp_path / "clip.jsonl") == lines
+    assert sorted(p.name for p in tmp_path.rglob("*")) == files
+    run.close()
+
+
+OTHER = Detection(
+    cls_id=0, cls_name="person", conf=0.80, bbox=(52.0, 36.0, 76.0, 56.0),
+    center=(64, 46), dx=24, dy=16, dx_pct=0.6, dy_pct=0.53,
+)
+
+
+def test_redraw_after_a_click_shows_the_new_target(config, rule_set):
+    detector = StubDetector([PERSON, OTHER])
+    run = session(detector, config(), rule_set)
+    for index in range(3):
+        last = run.step(stream_frame(index))
+    ids = {d.bbox: d.track_id for d in last.drawn}
+    assert last.target.detection.track_id == ids[PERSON.bbox]  # nearest the centre
+
+    run.click((64.0, 46.0))  # inside OTHER only
+    again = run.redraw()
+
+    assert again.target.detection.track_id == ids[OTHER.bbox]
+    assert again.target.locked
+    assert detector.calls == 3
+    assert not np.array_equal(again.canvas, last.canvas)  # the TARGET box moved
+    run.close()
+
+
+def test_redraws_of_a_held_frame_never_release_the_lock(config, rule_set):
+    cfg = config()
+    run = session(StubDetector([PERSON, OTHER]), cfg, rule_set)
+    for index in range(3):
+        last = run.step(stream_frame(index))
+    ids = {d.bbox: d.track_id for d in last.drawn}
+    run.click((64.0, 46.0))  # lock OTHER
+    raised = dataclasses.replace(cfg, model=dataclasses.replace(cfg.model, conf=0.85))
+
+    run.retune(raised, want_color=False)  # OTHER (0.80) is a near-miss now
+    for _ in range(cfg.tracker.track_buffer + 3):
+        hidden = run.redraw()
+        assert hidden.target.detection is None
+        assert (hidden.target.locked, hidden.target.lost) == (True, True)
+
+    run.retune(cfg, want_color=False)
+    shown = run.redraw()
+    run.close()
+    assert shown.target.detection.track_id == ids[OTHER.bbox]
+    assert shown.target.locked and not shown.target.lost

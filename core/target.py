@@ -57,20 +57,31 @@ class Targeting:
         self._locked_id = None
         self._missing = 0
 
-    def choose(self, detections: list[Detection], frame_size: tuple[int, int]) -> TargetState:
+    def choose(
+        self,
+        detections: list[Detection],
+        frame_size: tuple[int, int],
+        new_frame: bool = True,
+    ) -> TargetState:
         """Return this frame's target.
 
         `frame_size` is `(width, height)`; the distance itself comes from each
         detection's `dx`/`dy`, which are already relative to the frame centre.
+        `new_frame=False` chooses again on a frame already counted -- a paused
+        video redrawn -- so a locked target that is absent is reported lost
+        without bringing its release any closer.
         """
         candidates = _tracked(detections)
 
         if self._locked_id is not None:
             for det in candidates:
                 if det.track_id == self._locked_id:
-                    self._missing = 0
+                    if new_frame:
+                        self._missing = 0
                     return TargetState(det, locked=True, lost=False)
 
+            if not new_frame:
+                return TargetState(None, locked=True, lost=True)
             self._missing += 1
             if self._missing <= self._track_buffer:
                 return TargetState(None, locked=True, lost=True)

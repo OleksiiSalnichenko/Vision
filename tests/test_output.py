@@ -232,6 +232,22 @@ def test_the_stream_summary_names_what_was_written(capsys, tmp_path):
     assert second == "0 frames, 0 events, wrote nothing"
 
 
+def test_format_event_is_the_printed_line_without_printing(capsys):
+    line = output.format_event(_event(time=12.4))
+
+    assert line == "[00:12.4] person_appeared  person #7 0.83  dx +120 dy -40"
+    assert output.format_event(_event(track_id=None)).endswith("] person_appeared  person 0.83  dx +120 dy -40")
+    assert capsys.readouterr().out == ""
+
+
+def test_format_summary_is_the_printed_line_without_printing(capsys, tmp_path):
+    line = output.format_summary(2, 1, [tmp_path / "a.jsonl"])
+
+    assert line == f"2 frames, 1 events, wrote {tmp_path / 'a.jsonl'}"
+    assert output.format_summary(0, 0, []) == "0 frames, 0 events, wrote nothing"
+    assert capsys.readouterr().out == ""
+
+
 def test_the_photo_json_keeps_its_phase_1_shape(cfg, out_dir):
     path = output.write_json("bus.jpg", [_detection(track_id=7)], cfg)
 
