@@ -14,13 +14,11 @@ import argparse
 import logging
 import sys
 
-import yaml
-
 # `core.detector` first: it switches Ultralytics offline before anything imports it.
 from core.detector import Detector
 from core.config import Config, load_config
 from core.source import Source
-from detect import CONFIG_PATH, EXIT_USAGE, configure_console, not_yaml_text
+from detect import CONFIG_PATH, EXIT_USAGE, configure_console
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -51,9 +49,6 @@ def main(argv: list[str] | None = None) -> int:
         cfg = load_config(CONFIG_PATH)
     except (ValueError, OSError) as err:  # ConfigError is a ValueError; a missing file an OSError
         print(f"{err}", file=sys.stderr)
-        return EXIT_USAGE
-    except yaml.YAMLError:
-        print(not_yaml_text(CONFIG_PATH), file=sys.stderr)
         return EXIT_USAGE
 
     # Qt only now: a usage error above never needs it.

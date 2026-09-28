@@ -36,7 +36,7 @@ Conversation with the user is Ukrainian.
 | `venv\Scripts\python app.py --help` | desktop app flags; imports no Qt, opens nothing — the only `app.py` call an agent makes |
 | `venv\Scripts\python app.py --source data/test_images` | desktop app, folder opened once the model is in; Prev/Next, slider, Save. **User only: opens a window** |
 | `venv\Scripts\python app.py` | desktop app, pick a file / folder / camera in the window. **User only** |
-| `venv\Scripts\python -m pytest -q` | tests (320 pass) |
+| `venv\Scripts\python -m pytest -q` | tests (323 pass) |
 | `venv\Scripts\python -m pytest -q tests\test_rules.py` | one test file |
 | `venv\Scripts\python -m pytest -q tests\test_ui_window.py` | one Qt test file (offscreen, no window, stub model and camera) |
 
@@ -83,7 +83,8 @@ README.md            user-facing install / run / config / troubleshooting
   `Config.model / .classes / .display / .output / .capture / .bench / .tracker / .rules`
   (`TrackerConfig(track_buffer, match_thresh, fuse_score)`, `RulesConfig(file)`). One
   rule per key in `_RULES` (type + range); a missing key raises naming the key, an
-  unknown key only logs a warning. `DisplayConfig.color` (`display.color`) turns on
+  unknown key only logs a warning; unparseable YAML → `ConfigError("config file is not
+  valid YAML: …")`. `DisplayConfig.color` (`display.color`) turns on
   what `--color` does, without the flag. `save_values(path, values: dict[str, Any])` — dotted
   keys or `"classes"`; rewrites only the value after `key:` line by line (indent,
   trailing comment, commented-out lines, CRLF kept; `classes` rewritten as a block),
@@ -201,7 +202,7 @@ README.md            user-facing install / run / config / troubleshooting
   (a `StreamSession`; catches only `StreamWriteError` → exit 2), `prepare_rules(cfg) ->
   RuleSet` (wraps `pipeline.prepare_rules(PROJECT_ROOT / cfg.rules.file, HANDLERS_PATH)`,
   reading `HANDLERS_PATH` at call time), `want_color(args, cfg)` = `args.color or
-  cfg.display.color`, `not_yaml_text(path)` (the one sentence for unparseable YAML),
+  cfg.display.color`,
   `Window(enabled, stream=False)` with `.show(image) -> bool`, `.on_click(cb)`, `.close()`;
   `configure_console()`, `CONFIG_PATH`, `HANDLERS_PATH`, `PROJECT_ROOT`,
   `EXIT_USAGE = 2`, `EXIT_STREAM_FAILED = 1`. No module attribute `draw` any more.
@@ -331,8 +332,8 @@ The load-bearing boundaries:
   Passing fps to `BYTETracker` requires changing `Targeting` too.
 - `bench.py`, `scripts/grab.py`, `scripts/export_openvino.py` and `app.py` import
   `configure_console`, `CONFIG_PATH` and `EXIT_USAGE` from `detect.py`, so the
-  console trap is closed in one place; `app.py` and `ui/main_window.py` also take
-  `not_yaml_text`, `ui/main_window.py` `PROJECT_ROOT`, `ui/worker.py` `detect.prepare_rules`.
+  console trap is closed in one place; `ui/main_window.py` also takes
+  `PROJECT_ROOT`, `ui/worker.py` `detect.prepare_rules`.
 - `config.yaml` is written only by `save_values`, line by line — never by dumping YAML,
   which would drop the user's comments and commented-out lines.
 
@@ -387,7 +388,7 @@ The load-bearing boundaries:
 
 ## Tests
 
-`venv\Scripts\python -m pytest -q` → 320 passed. `tests/conftest.py` puts the project
+`venv\Scripts\python -m pytest -q` → 323 passed. `tests/conftest.py` puts the project
 root on `sys.path`, so `import core` works without installing the package.
 
 No test reaches the network or opens a real camera or an on-screen window; only the
@@ -506,8 +507,8 @@ webcam run (CLI and app), click-to-lock.
   handler slows the video by the same amount. In the app a photo's `@on_detect`
   handlers fire once, on its first display — not on Prev/Next back to it or the slider
   (a model or class change re-runs the photo and fires them again).
-- Renaming `configure_console`, `CONFIG_PATH`, `EXIT_USAGE`, `PROJECT_ROOT`,
-  `not_yaml_text` or `prepare_rules` in `detect.py` breaks `bench.py`, `scripts/grab.py`,
+- Renaming `configure_console`, `CONFIG_PATH`, `EXIT_USAGE`, `PROJECT_ROOT`
+  or `prepare_rules` in `detect.py` breaks `bench.py`, `scripts/grab.py`,
   `scripts/export_openvino.py`, `app.py` or `ui/`.
 - The console here is cp1252; `configure_console()` sets `errors="backslashreplace"`
   so a Cyrillic file name cannot kill a finished run. Importing `ultralytics`

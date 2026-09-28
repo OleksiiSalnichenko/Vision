@@ -449,6 +449,17 @@ def test_a_broken_rules_file_never_switches_the_camera_on(stream_config, capsys,
     assert "person_appeared" in capsys.readouterr().err
 
 
+def test_a_config_that_is_not_yaml_is_one_sentence_not_a_traceback(tmp_path, capsys, monkeypatch):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("model: [\n", encoding="utf-8")
+
+    code, opened = run_main(monkeypatch, config_path, CameraStub(frames=FRAMES))
+
+    assert code == detect.EXIT_USAGE
+    assert opened == []
+    assert capsys.readouterr().err.strip() == f"config file is not valid YAML: {config_path}"
+
+
 # --- colour: the flag or the config key ------------------------------------
 
 

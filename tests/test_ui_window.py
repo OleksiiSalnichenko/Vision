@@ -680,7 +680,7 @@ def test_save_into_a_file_that_is_not_yaml_says_the_apps_sentence(config_copy, m
 
     window.settings.save_button.click()
 
-    assert warnings == [app.not_yaml_text(config_copy)]
+    assert warnings == [f"config file is not valid YAML: {config_copy}"]
     assert config_copy.read_text(encoding="utf-8") == "model: [\n"
 
 

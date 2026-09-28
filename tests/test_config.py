@@ -66,6 +66,16 @@ def test_unknown_key_is_a_warning_not_a_failure(write_config, caplog):
     assert "display.glitter" in caplog.text
 
 
+def test_a_file_that_is_not_yaml_fails_with_one_sentence_naming_it(tmp_path):
+    broken = tmp_path / "config.yaml"
+    broken.write_text("model: [\n", encoding="utf-8")
+
+    with pytest.raises(ConfigError) as failure:
+        load_config(broken)
+
+    assert str(failure.value) == f"config file is not valid YAML: {broken}"
+
+
 # The keys and types come from the shared schema in `conftest`, which is the
 # hand-written copy of the documented one. Only keys and types are checked: the
 # values in `config.yaml` are the user's to tune.

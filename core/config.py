@@ -159,7 +159,11 @@ def load_config(path: str | Path) -> Config:
     if not path.is_file():
         raise FileNotFoundError(f"config file not found: {path}")
 
-    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        # PyYAML's own message runs over several lines; one sentence names the file.
+        raise ConfigError(f"config file is not valid YAML: {path}") from exc
     if not isinstance(data, dict):
         raise ConfigError(f"config file is not a mapping: {path}")
 

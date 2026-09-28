@@ -27,8 +27,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal, Slot
 from PySide6.QtGui import QBrush, QCloseEvent, QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
@@ -54,7 +52,7 @@ from PySide6.QtWidgets import (
 from core.config import Config, ConfigError, load_config, save_values
 from core.source import CAMERA_PREFIX, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
 from core.types import Detection
-from detect import CONFIG_PATH, PROJECT_ROOT, not_yaml_text
+from detect import CONFIG_PATH, PROJECT_ROOT
 from ui.settings_panel import SettingsPanel, model_entry
 from ui.view import FrameView
 from ui.worker import FramePayload, PipelineWorker
@@ -429,9 +427,6 @@ class MainWindow(QMainWindow):
                 save_values(CONFIG_PATH, values)
         except (ConfigError, OSError) as err:
             self._warn(str(err))
-            return
-        except yaml.YAMLError:
-            self._warn(not_yaml_text(CONFIG_PATH))
             return
         self._notice(saved_text(values))
 
