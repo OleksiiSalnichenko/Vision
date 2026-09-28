@@ -316,6 +316,23 @@ def test_a_source_that_fails_is_said_and_the_window_lives_on(cfg, make_window, q
     qtbot.waitUntil(lambda: window.table.rowCount() == 1, timeout=TIMEOUT_MS)
 
 
+def test_a_source_that_fails_to_open_clears_the_one_it_replaced(cfg, make_window, qtbot,
+                                                                 warnings, photos):
+    window = make_window(cfg, [PERSON], {"photos": photos})
+    wait_ready(qtbot, window)
+    window.open_source("photos")
+    qtbot.waitUntil(lambda: window.position_label.text() == "1 / 3", timeout=TIMEOUT_MS)
+
+    window.open_source("busy.mp4")
+    qtbot.waitUntil(lambda: warnings == ["cannot open video: busy.mp4"], timeout=TIMEOUT_MS)
+
+    assert not window.view.has_image()
+    assert window.objects.currentWidget() is window.no_objects_label
+    assert window.position_label.text() == ""
+    assert not window.next_button.isEnabled() and not window.stop_button.isEnabled()
+    assert window.status_label.text() == "cannot open video: busy.mp4"
+
+
 # --- photos and folders ------------------------------------------------------------
 
 

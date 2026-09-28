@@ -36,7 +36,7 @@ Conversation with the user is Ukrainian.
 | `venv\Scripts\python app.py --help` | desktop app flags; imports no Qt, opens nothing — the only `app.py` call an agent makes |
 | `venv\Scripts\python app.py --source data/test_images` | desktop app, folder opened once the model is in; Prev/Next, slider, Save. **User only: opens a window** |
 | `venv\Scripts\python app.py` | desktop app, pick a file / folder / camera in the window. **User only** |
-| `venv\Scripts\python -m pytest -q` | tests (323 pass) |
+| `venv\Scripts\python -m pytest -q` | tests (324 pass) |
 | `venv\Scripts\python -m pytest -q tests\test_rules.py` | one test file |
 | `venv\Scripts\python -m pytest -q tests\test_ui_window.py` | one Qt test file (offscreen, no window, stub model and camera) |
 
@@ -388,7 +388,7 @@ The load-bearing boundaries:
 
 ## Tests
 
-`venv\Scripts\python -m pytest -q` → 323 passed. `tests/conftest.py` puts the project
+`venv\Scripts\python -m pytest -q` → 324 passed. `tests/conftest.py` puts the project
 root on `sys.path`, so `import core` works without installing the package.
 
 No test reaches the network or opens a real camera or an on-screen window; only the
@@ -490,7 +490,11 @@ webcam run (CLI and app), click-to-lock.
   (the export is static); `imgsz` or weights changes reload the detector on the worker
   thread, and a failed load keeps the old model running (`applied` reverts the panel).
 - `closeEvent` waits for the worker thread with no timeout: a frame stuck in a slow
-  handler or model call holds the window open until it returns.
+  handler or model call keeps the process alive until it returns (the window hides
+  first, so it does not look frozen).
+- A `failed` before the first frame of the newest open clears the view, table and
+  Prev/Next/Stop (the worker already stopped the old source); a failure after a frame
+  keeps the last picture.
 - FFmpeg prints its own stderr line (e.g. `moov atom not found`) on a broken `.mp4`
   before our one-sentence error; it cannot be silenced from the process.
 - `model.weights` is resolved against the **current working directory**, while

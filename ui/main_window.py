@@ -176,6 +176,7 @@ class MainWindow(QMainWindow):
         self._streaming = False  # a stream is running: its end says `finished`
         self._generation = 0  # bumped on every open
         self._live_generation = 0  # the open whose frames the worker now sends
+        self._shown_generation = 0  # the open the frame on screen belongs to
         self._loading = True  # a model is loading: its answer puts the status back
         self._status_before_loading = ""
 
@@ -477,6 +478,7 @@ class MainWindow(QMainWindow):
         if payload is None:
             return
         self._payload = payload
+        self._shown_generation = self._live_generation
         self._streaming = payload.is_stream
         self.view.show_image(payload.canvas)
         self._fill_table(payload.drawn, payload.target_track_id)
@@ -497,6 +499,18 @@ class MainWindow(QMainWindow):
         bar.setValue(bar.maximum())
 
     def _failed(self, sentence: str) -> None:
+        if self._shown_generation != self._generation:
+            # The open failed before its first frame; the worker already stopped the
+            # source on screen, so its picture and table would only mislead.
+            self._payload = None
+            self.view.clear()
+            self._fill_table([], None)
+            self.near_miss_label.setText(near_miss_text(0))
+            for button in (self.stop_button, self.pause_button, self.prev_button,
+                           self.next_button):
+                button.setEnabled(False)
+            self.position_label.setText("")
+            self._set_status(sentence)
         self._warn(sentence)
 
     def _finished(self, summary: str) -> None:
@@ -582,5 +596,8 @@ class MainWindow(QMainWindow):
         """Stop the worker and wait for its thread: the camera is free once we are gone."""
         if self.worker_thread.isRunning():
             self._shutdown.emit()
+            # A model still loading or a slow handler can hold the thread for seconds;
+            # gone from the screen at once, the window does not look frozen meanwhile.
+            self.hide()
             self.worker_thread.wait()
         super().closeEvent(event)
