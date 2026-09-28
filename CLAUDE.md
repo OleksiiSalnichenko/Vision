@@ -142,7 +142,9 @@ README.md            user-facing install / run / config / troubleshooting
 - `core/geometry.py` — `offsets(bbox, frame_size) -> (center, dx, dy, dx_pct, dy_pct)`.
   Pure. Right and down positive; centre and `dx`/`dy` rounded to whole pixels.
 - `core/draw.py` — `annotate(image, detections, cfg, target=None, status=None) -> np.ndarray`,
-  always a copy. Without `target`/`status` the output is byte-for-byte phase 1. On
+  always a copy. All text sits on filled dark plates (`_put_text`; a thick black
+  outline read as a smeared copy and was replaced 2026-09-28). Without
+  `target`/`status` the photo overlay is pinned by a checksum in `test_draw`. On
   streams: `#id` in labels, magenta thick `TARGET` box, `status` line top-left. Takes
   the frame centre from `offsets((0,0,w,h),(w,h))` so crosshair and `dx`/`dy` zero agree.
 - `core/output.py` — the only module in `core/` allowed to print. Stills:
@@ -407,7 +409,7 @@ subprocess offline tests load the real model. The seams:
 6. `test_source` — a tiny video written into `tmp_path` (also under a Cyrillic name);
    the camera is a monkeypatched `open_camera`.
 7. `test_output`, `test_draw` — JSONL/mp4/event files, phase-1 JSON shape, photo overlay
-   byte-for-byte phase 1.
+   pinned by checksum (change it only after looking at a rendered image).
 8. `test_detect_cli` — `StubDetector` + fake sources: the drawn / near-miss split,
    `--conf`, `run_stream` output, handler loading, camera release on every exit path,
    rules/weights errors never switching the camera on.

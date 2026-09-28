@@ -1,7 +1,6 @@
 """The overlay seam: `draw.annotate` with and without a target and a status line.
 
-The photo overlay is pinned by a checksum rendered with the committed phase-1
-module. Everything else compares two calls on the same frame: the stream look
+The photo overlay is pinned by a checksum, changed only on purpose. Everything else compares two calls on the same frame: the stream look
 is accepted by eye, what is asserted here is only that each new argument
 changes the picture where it should.
 """
@@ -58,13 +57,15 @@ def _detection(bbox=(40, 80, 120, 200), track_id=None) -> Detection:
     )
 
 
-# SHA-256 of the phase-1 overlay for the scene below, rendered by the committed
-# phase-1 `core/draw.py` (commit 779c9d3, loaded as a separate module), not by
-# the module under test. A change here means photos no longer look as they did.
-PHASE_1_OVERLAY_SHA256 = "e36754630c234bf3723d4b058add8559bd72a647d89d029ff14db506817fe3fa"
+# SHA-256 of the photo overlay for the scene below. It was the phase-1 checksum
+# until 2026-09-28, when text moved onto dark plates at the user's request (the
+# thick outline read as a smeared second copy); the new value was accepted after
+# looking at the rendered bus.jpg. A change here means photos no longer look as
+# they did -- update it only on purpose, after looking at a rendered image.
+PHOTO_OVERLAY_SHA256 = "60adc0102a599adb001df6da01832aed613f07343a5d698828d2ca071ce4f627"
 
 
-def test_a_photo_overlay_is_byte_for_byte_phase_1(write_config):
+def test_a_photo_overlay_is_pinned(write_config):
     cfg = load_config(
         write_config(
             {
@@ -80,7 +81,7 @@ def test_a_photo_overlay_is_byte_for_byte_phase_1(write_config):
 
     canvas = annotate(_frame(), [person, cup], cfg)
 
-    assert hashlib.sha256(canvas.tobytes()).hexdigest() == PHASE_1_OVERLAY_SHA256
+    assert hashlib.sha256(canvas.tobytes()).hexdigest() == PHOTO_OVERLAY_SHA256
 
 
 def test_the_target_box_is_drawn_differently(cfg):

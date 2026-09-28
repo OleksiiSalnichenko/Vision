@@ -33,7 +33,10 @@ _BOX_COLOR = (0, 200, 255)  # amber; readable on both dark and light photos
 _CENTRE_LINE_COLOR = (255, 255, 0)  # cyan
 _TARGET_COLOR = (255, 0, 255)  # magenta; unlike any other stroke on the overlay
 _TEXT_COLOR = (255, 255, 255)
-_TEXT_OUTLINE_COLOR = (0, 0, 0)  # keeps text legible over a bright background
+# A filled plate behind every text keeps it legible on any background. It
+# replaced a thick black outline, which at this font size was as wide as the
+# letters and read as a second, offset copy of the text.
+_TEXT_PLATE_COLOR = (0, 0, 0)
 
 _BOX_THICKNESS = 2
 _TARGET_THICKNESS = 4  # twice a normal box, so the target reads at a glance
@@ -48,8 +51,8 @@ _OBJECT_CROSS_ARM = 6  # px
 _FONT = cv2.FONT_HERSHEY_SIMPLEX
 _FONT_SCALE = 0.45
 _FONT_THICKNESS = 1
-_TEXT_OUTLINE_THICKNESS = 3
 _TEXT_MARGIN = 4  # px, gap between the box edge and the text it carries
+_TEXT_PADDING = 2  # px, plate around the text on every side
 
 
 def annotate(
@@ -190,17 +193,19 @@ def _draw_object_centre(canvas: np.ndarray, centre: tuple[int, int]) -> None:
 def _draw_target(canvas: np.ndarray, detection: Detection) -> None:
     """Draw the target's box over its ordinary one, with `TARGET` above it.
 
-    The mark sits one text line above the ordinary label, so both stay legible.
+    The mark sits one plate above the ordinary label, so the two plates do not
+    overlap and both stay legible.
     """
     x1, y1, x2, y2 = (int(round(value)) for value in detection.bbox)
     cv2.rectangle(canvas, (x1, y1), (x2, y2), _TARGET_COLOR, _TARGET_THICKNESS)
-    (_, text_height), _ = cv2.getTextSize(
+    (_, text_height), baseline = cv2.getTextSize(
         _TARGET_LABEL, _FONT, _FONT_SCALE, _FONT_THICKNESS
     )
+    plate_height = text_height + baseline + 2 * _TEXT_PADDING
     _put_text(
         canvas,
         _TARGET_LABEL,
-        (x1 + _TEXT_MARGIN, y1 - 2 * _TEXT_MARGIN - text_height),
+        (x1 + _TEXT_MARGIN, y1 - _TEXT_MARGIN - plate_height),
     )
 
 
@@ -216,23 +221,28 @@ def _label_text(detection: Detection) -> str:
 
 
 def _put_text(canvas: np.ndarray, text: str, origin: tuple[int, int]) -> None:
-    """Draw `text` with a dark outline, kept inside the frame."""
+    """Draw `text` on a dark plate, kept inside the frame.
+
+    `origin` is the text baseline's left end, as for `cv2.putText`; the plate
+    grows around the glyphs by `_TEXT_PADDING` and down past the baseline, so
+    descenders (`p`, `y`) sit on it too.
+    """
     height, width = canvas.shape[:2]
-    (text_width, text_height), _ = cv2.getTextSize(
+    (text_width, text_height), baseline = cv2.getTextSize(
         text, _FONT, _FONT_SCALE, _FONT_THICKNESS
     )
     x = min(max(origin[0], _TEXT_MARGIN), max(width - text_width - _TEXT_MARGIN, 0))
-    y = min(max(origin[1], text_height + _TEXT_MARGIN), height - _TEXT_MARGIN)
+    y = min(
+        max(origin[1], text_height + _TEXT_MARGIN),
+        height - baseline - _TEXT_PADDING,
+    )
 
-    cv2.putText(
+    cv2.rectangle(
         canvas,
-        text,
-        (x, y),
-        _FONT,
-        _FONT_SCALE,
-        _TEXT_OUTLINE_COLOR,
-        _TEXT_OUTLINE_THICKNESS,
-        cv2.LINE_AA,
+        (x - _TEXT_PADDING, y - text_height - _TEXT_PADDING),
+        (x + text_width + _TEXT_PADDING, y + baseline + _TEXT_PADDING),
+        _TEXT_PLATE_COLOR,
+        cv2.FILLED,
     )
     cv2.putText(
         canvas,
