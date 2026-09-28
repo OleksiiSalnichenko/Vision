@@ -46,7 +46,10 @@ The absence of CUDA is the single most important hardware fact. It means:
   private datasets) is the chosen provider. Training locally on CPU would take
   6-10 hours where a GPU takes 15 minutes.
 - **Inference runs locally**, on CPU, accelerated with OpenVINO (Intel's own
-  runtime, roughly 2-3x faster than plain PyTorch on this hardware).
+  runtime). Measured on this laptop: 1.54x faster than plain PyTorch (0.051 s
+  vs 0.079 s per frame on `bus.jpg`, docs/adr/0014), not the 2-3x first
+  expected. OpenVINO is the default model on the laptop; switching back to
+  PyTorch is one line of `config.yaml`.
 
 ---
 
@@ -55,9 +58,9 @@ The absence of CUDA is the single most important hardware fact. It means:
 | Layer | Choice | Why |
 |---|---|---|
 | Language | Python 3.11 | The whole ML ecosystem is Python. 3.11 has prebuilt wheels for every dependency, including OpenVINO and Pi builds. The system currently has 3.7.3, which is too old for modern PyTorch and must be left untouched. |
-| Detection | Ultralytics YOLO26 | Current generation, released October 2025. NMS-free end-to-end architecture: constant-time inference regardless of how many objects are in frame. The nano size is accurate enough for this project and fast enough for the Pi. |
+| Detection | Ultralytics YOLO26 | Current generation, released January 2026. NMS-free end-to-end architecture: constant-time inference regardless of how many objects are in frame. The nano size is accurate enough for this project and fast enough for the Pi. |
 | Image I/O and drawing | OpenCV | Standard, fast, already a YOLO dependency. |
-| Acceleration | OpenVINO (laptop), NCNN or Hailo (Pi) | Same weights, different export format. One config line. |
+| Acceleration | OpenVINO (laptop), NCNN or Hailo (Pi) | Same weights, different export format. One config line. OpenVINO is the laptop default; `.pt` is the one-line switch back. |
 | GUI (phase 3) | PySide6 | Official Qt bindings for Python, LGPL. Real desktop widgets, packageable to .exe. |
 | Annotation (phase 4) | Label Studio | Runs locally via pip. Data never leaves the machine. Exports YOLO format directly. |
 | Training (phase 4) | Kaggle Notebooks | Free GPU, private datasets, sessions do not drop mid-run. |
@@ -90,9 +93,14 @@ the rest are estimates to be replaced by real measurements from `bench.py`):
 | Environment | Per frame | FPS |
 |---|---|---|
 | Laptop, PyTorch (phase 1) | ~110 ms | ~9 |
-| Laptop, OpenVINO (phase 2) | ~39 ms | ~25 |
+| Laptop, OpenVINO (phase 2, measured) | 51 ms | ~20 |
 | Pi 5, NCNN | ~200 ms | ~5 |
 | Pi 5 + Hailo AI HAT | ~30 ms | ~30 |
+
+The OpenVINO row is measured with `bench.py --weights` on `bus.jpg` (3 warm-up
++ 10 runs): `.pt` 0.079 s, OpenVINO 0.051 s per frame, a 1.54x gain
+(docs/adr/0014). Single runs on this 4-core laptop CPU swing ±30% or more, so
+re-measure rather than quote. OpenVINO is the default model on the laptop.
 
 `n` is the only size that produces usable numbers in all four rows. It is chosen
 because the Pi, not the laptop, is the binding constraint.
@@ -188,10 +196,17 @@ rewriting one**:
 
 | Phase | Added | Rewritten |
 |---|---|---|
-| 2 — video | `core/tracker.py`, `core/rules.py`, a video branch in `source.py` | nothing |
-| 3 — app | `ui/` (PySide6, imports `core/` as a library) | nothing |
+| 2 — video | `core/tracker.py`, `core/rules.py`, `core/target.py`, `scripts/export_openvino.py`, `rules.yaml`, `handlers.py`, a video branch in `source.py` | edited, no existing call broke: `detect.py` (stream branch), `draw.py` (target box, status line), `detector.py` (OpenVINO folder), `events.py` (`call`, `names`), `source.py` (video and camera branches; `open_camera` moved here from `scripts/grab.py`), `output.py` (stream writing), `bench.py` (`--weights`), `config.py` (new sections) |
+| 3 — app | `ui/` (PySide6, imports `core/` as a library), `app.py`, `core/pipeline.py` | `detect.py` (the frame order moved into `core/pipeline.py`, behaviour unchanged); additions only to `core/tracker.py` (`set_conf`), `core/detector.py` (`names`, `set_classes`), `core/config.py` (`save_values`, `display.color`), `core/target.py` (`choose(..., new_frame)`), `core/output.py` (`format_event`, `format_summary`) |
 | 4 — custom classes | `training/` | one config line |
 | 5 — Pi | `scripts/export_ncnn.py`, web UI | one line in `detector.py` |
+
+Phase 2 did not stay at "rewritten: nothing": streams, targeting and the
+OpenVINO folder reached most existing modules (all but `geometry.py`,
+`attributes.py` and `aim.py`), but every change was additive and no phase-1
+call changed meaning. Phase 3 added `core/pipeline.py` because without a shared
+pipeline the app would carry a second copy of the frame order
+(docs/adr/0015).
 
 `core/` must never import from `ui/` or know how it was launched. This is the
 one structural rule that matters.
@@ -215,16 +230,26 @@ class Detection:
     dx_pct: float          # dx as a fraction of half the frame width, -1..1
     dy_pct: float          # dy as a fraction of half the frame height, -1..1
     color: str | None      # dominant colour name, only when --color is set
+    track_id: int | None   # set by core.tracker on streams only
 
 @dataclass
 class Frame:
     image: np.ndarray      # BGR, as OpenCV returns it
     source: str            # file path, or "camera:0"
     index: int             # 0 for a still image, frame number for video
+    time: float            # seconds since the stream started; 0 for stills
 ```
+
+`track_id` and `time` were added in phase 2 (docs/adr/0007); both default
+(`None`, `0.0`), so phase-1 code that builds these types is unchanged.
 
 `Detection` is the only type that crosses module boundaries. Every consumer
 (drawing, JSON, events, future servo control) reads this and nothing else.
+Since phase 2 the wiring also passes three wrappers around it:
+`TargetState` (`core/target.py`: the chosen `Detection` plus `locked`/`lost`),
+and `Event` and `RuleSet` (`core/rules.py`: a fired rule carrying its
+`Detection`, and the loaded `rules.yaml`). What a consumer finally reads is
+still a `Detection`.
 
 ### `core/source.py`
 
@@ -258,6 +283,20 @@ confusing crash. Therefore `config.yaml` stores a **path** (`models/yolo26n.pt`)
 and `Detector.__init__` raises
 `FileNotFoundError: run scripts/fetch_models.py first` if the file is absent. It
 must never reach for the network.
+
+Since phase 2 the default path is the OpenVINO folder
+`models/yolo26n_openvino_model` (made offline by `scripts/export_openvino.py`;
+a missing folder raises `run scripts/export_openvino.py first`), and
+`models/yolo26n.pt` is the one-line switch back. `YOLO(path)` picks the format
+from the path; nothing else knows it.
+
+Offline import order. `ultralytics` is imported only by `core/detector.py`,
+`core/tracker.py` and `scripts/export_openvino.py`. `core/detector.py` sets, at
+module top before any ultralytics/torch/openvino import, `YOLO_OFFLINE=1`,
+`YOLO_AUTOINSTALL=0`, `KMP_BLOCKTIME=0` and `sys.modules["openvino_telemetry"] =
+None`; the other two do `import core.detector` as their first project import,
+and all three import `ultralytics` lazily inside a function. Nothing imports
+`openvino` directly (docs/adr/0009, 0012, 0014).
 
 ### `core/events.py`
 
@@ -313,10 +352,11 @@ numbers overlap and become unreadable.
 
 ```yaml
 model:
-  weights: models/yolo26n.pt
+  #weights: models/yolo26n.pt
+  weights: models/yolo26n_openvino_model
   imgsz: 640            # native training size; other values usually hurt accuracy
   conf: 0.5             # display and event threshold
-  conf_debug: 0.25      # written to JSON but not drawn — shows near-misses
+  conf_debug: 0.25      # written to JSON but not drawn -- shows near-misses
 
 classes:                # whitelist; empty means all 80 COCO classes
   - person
@@ -329,6 +369,8 @@ display:
   show_labels: true
   show_offsets: true
   crosshair: true
+  center_line: false    # line between the frame centre and each object centre
+  color: false          # dominant colour per object, as the --color flag does
 
 output:
   save_json: true
@@ -338,7 +380,27 @@ output:
 capture:
   width: 1280
   height: 720
+  camera: 0             # webcam index scripts/grab.py opens by default
+  count: 5              # frames scripts/grab.py saves per run
+  interval: 1.0         # seconds between saved frames; also lets the sensor settle
+
+bench:
+  runs: 10              # measured passes over the source
+  warmup: 3             # discarded passes: the first inference is always slower
+
+tracker:
+  track_buffer: 30      # frames a lost track is kept before its id is retired
+  match_thresh: 0.8     # IoU-based association threshold used by ByteTrack
+  fuse_score: true      # blend detection score into the association cost
+
+rules:
+  file: rules.yaml      # conditions, actions and debouncing for streams
 ```
+
+The OpenVINO folder is the default model; switching back to PyTorch is
+uncommenting the `.pt` line and commenting out the folder. Every key is
+required: `core/config.py` holds one rule per key, and a missing key is an
+error naming it, never a filled-in default (docs/adr/0003, 0005).
 
 `conf_debug` matters more than it looks. Writing every detection down to 0.25
 into the JSON, while drawing only those above 0.5, is the main debugging tool:
@@ -396,7 +458,7 @@ target for this phase.
 Video and webcam branches in `Source`. ByteTrack for stable `track_id` across
 frames. Target selection: click an object to lock onto it, otherwise
 auto-select the one nearest the frame centre. Export to OpenVINO and measure the
-gain. `rules.yaml`: conditions (appeared / disappeared / present for N seconds /
+gain (measured: 1.54x, see section 4; OpenVINO has since become the default). `rules.yaml`: conditions (appeared / disappeared / present for N seconds /
 entered a zone), actions (log line, save frame, call a function), and debouncing
 (confirm over 3 consecutive frames, then 5 seconds cooldown).
 
@@ -409,6 +471,11 @@ Tracking exists here and not in phase 1 because a still image has no time axis.
 
 PySide6: open a file or camera, live view, settings, object list, threshold
 slider. `ui/` imports `core/`, never the reverse.
+
+Launched with `venv\Scripts\python app.py`. Settings apply at once for the
+session; "Save to config.yaml" writes only the changed values and keeps the
+file's comments. The model and the source run in a background thread, so the
+window stays responsive. Packaging to .exe is not part of this phase.
 
 ### Phase 4 — custom classes
 
