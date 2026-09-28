@@ -6,7 +6,8 @@
 # here without a rule there (or the other way round) is an error, not a default.
 
 model:
-  weights: models/yolo26n.pt
+  #weights: models/yolo26n.pt
+  weights: models/yolo26n_openvino_model
   imgsz: 640            # native training size; other values usually hurt accuracy
   conf: 0.5             # display and event threshold
   conf_debug: 0.25      # written to JSON but not drawn -- shows near-misses

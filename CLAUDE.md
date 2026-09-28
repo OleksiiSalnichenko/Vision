@@ -22,7 +22,7 @@ Conversation with the user is Ukrainian.
 | `py -3.11 -m venv venv` | create the project interpreter (Python 3.11) |
 | `venv\Scripts\python -m pip install -r requirements.txt` | install dependencies |
 | `venv\Scripts\python scripts\fetch_models.py` | one-time online step: weights + stock photo |
-| `venv\Scripts\python scripts\export_openvino.py` | one-time offline export to `models\yolo26n_openvino_model\`; prints `skip:` when it exists, `--force` redoes it |
+| `venv\Scripts\python scripts\export_openvino.py` | one-time offline export to `models\yolo26n_openvino_model\` — the default model, so required after `fetch_models.py` before the first run; prints `skip:` when it exists, `--force` redoes it (needed after an `imgsz` change) |
 | `venv\Scripts\python detect.py --source data/test_images/bus.jpg` | detect on one image |
 | `venv\Scripts\python detect.py --source data/test_images` | detect on a folder, file-name order |
 | `venv\Scripts\python detect.py --source data/test_images/bus.jpg --no-window --conf 0.3 --classes person "cell phone" --color` | every flag at once |
@@ -41,7 +41,8 @@ Conversation with the user is Ukrainian.
 | `venv\Scripts\python -m pytest -q tests\test_ui_window.py` | one Qt test file (offscreen, no window, stub model and camera) |
 
 Never plain `python`: the system interpreter is 3.7.3 and must stay untouched.
-Switching the detector to OpenVINO is one line: `model.weights: models/yolo26n_openvino_model`.
+The default model is OpenVINO (`model.weights: models/yolo26n_openvino_model`, docs/adr/0021);
+switching back to PyTorch is one line: `model.weights: models/yolo26n.pt`.
 
 ## Structure
 
@@ -66,8 +67,9 @@ out/                 <stem>.json, <stem>_annotated.jpg; streams: <stem>.jsonl,
                      — gitignored, overwritten; camera stem is camera_N
 tests/               one file per module + test_detect_cli, test_pipeline, test_offline(_openvino,_ui),
                      test_bench, test_export, test_ui_{worker,window,settings,view,boundaries}
-docs/adr/            0001–0020 decision records (0007–0014 phase 2, 0015–0020 phase 3) — read-only
-ARCHITECTURE.md      design of record — stale in places, see Pitfalls
+docs/adr/            0001–0021 decision records (0007–0014 phase 2, 0015–0020 phase 3,
+                     0021 OpenVINO default, supersedes 0011) — read-only
+ARCHITECTURE.md      design of record — the user's document; see Pitfalls
 README.md            user-facing install / run / config / troubleshooting
 ```
 
@@ -242,7 +244,9 @@ README.md            user-facing install / run / config / troubleshooting
   `report_speedup(results)`, `is_still(spec)`, `STILLS_ONLY_MESSAGE`; `--weights A [B …]`.
   Video and camera are refused by the path string before `Source` is built.
 - `scripts/export_openvino.py` — `main(argv=None) -> int`, `--weights` (default
-  `model.weights`, `.pt` only), `--force`; `target_for`, `is_complete`, `export`.
+  `model.weights`; an `*_openvino_model` folder maps to the `.pt` beside it via
+  `source_for`, since the folder is the shipped default), `--force`; `source_for`,
+  `target_for`, `is_complete`, `export`.
   FP32, static `model.imgsz` (changing `imgsz` means `--force`), `device="cpu"`.
   Prints `exported: …` / `skip: …`. A folder without `*.xml` is redone.
 - `scripts/fetch_models.py` — no arguments, exit 0/1. Stages into `models\.part\`,
@@ -370,7 +374,8 @@ The load-bearing boundaries:
 - `Detection` gains no new fields for bookkeeping — a mark becomes a predicate
   (`is_debug`). `track_id` and `Frame.time` were added by decision (docs/adr/0007).
 - No abstraction around model choice: `n` → `s`, or `.pt` → OpenVINO, is one line of
-  `config.yaml`. The default stays `.pt` (docs/adr/0011).
+  `config.yaml`. The default is OpenVINO (docs/adr/0021, superseding 0011); `.pt` is
+  one line away.
 - Tests take tunable values from `conftest.schema_value` / `config_text`, never copy
   numbers from `config.yaml`.
 - A missing dependency is a blocker to report, not something to install.
@@ -451,14 +456,11 @@ webcam run (CLI and app), click-to-lock.
 - **No test and no agent opens a real camera** (`camera:0`, bare `0`, `grab.py`, the app) — it
   once held the user's webcam. A bare whole number that is not an existing path *is*
   a camera; `bench.py` refuses by string before `Source`. Use `camera:9` for the error path.
-- **`ARCHITECTURE.md` is stale** in §2/§4 (OpenVINO numbers), §6 (phase 2 "Rewritten:
-  nothing" — every existing `core/` module but geometry/attributes/aim changed, and
-  every entry point), §7 (`Detection`/`Frame` lack `track_id`/`time`; no tracker,
-  target, rules contracts) and §9 (predates `display.center_line`,
-  `capture.camera/count/interval`, `bench`, `tracker`, `rules`, `display.color`); §6 also
-  says phase 3 rewrote nothing, while it rewrote `detect.py` onto `core/pipeline.py` and
-  extended config/detector/tracker/target/output. The code, `config.yaml` and
-  `docs/adr/` are the truth.
+- **`ARCHITECTURE.md`** was brought up to date with phases 1–3 on 2026-09-28 (§2–§4
+  measured numbers and OpenVINO default, §6 phase table, §7 `track_id`/`time`, §9
+  schema, §10). Still stale: the «Status» line at the top and the §6 file tree
+  (phase 1 only). It is the user's document — edit only with their yes. Where it
+  disagrees, the code, `config.yaml` and `docs/adr/` are the truth.
 - **No agent launches `app.py` except `--help`.** Any other run opens a window on the
   user's screen, and its Open camera / `--source camera:N` holds the webcam until the
   window closes. Drive the app only through `test_ui_*` (offscreen, stubs).

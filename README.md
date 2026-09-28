@@ -61,6 +61,19 @@ It writes `models\yolo26n.pt`, `models\yolo26s.pt`,
 Running it again reports `skip` for whatever is already on disk and does not
 touch the network at all.
 
+Last, convert the model to OpenVINO, the format `config.yaml` runs by default
+(offline, once):
+
+```
+venv\Scripts\python scripts\export_openvino.py
+```
+
+It writes `models\yolo26n_openvino_model\` and prints `exported: ...`; a
+second run prints `skip: ...`. Skip this step and every run stops with
+`run scripts/export_openvino.py first` -- see
+[Faster inference: OpenVINO](#faster-inference-openvino) for why it is the
+default and how to go back to the plain PyTorch weights instead.
+
 Tests:
 
 ```
@@ -348,20 +361,30 @@ per frame -- so they fire at the rate of events, not at 25 times a second.
 
 ## Faster inference: OpenVINO
 
-OpenVINO is Intel's runtime for running a model on an Intel CPU. Export the
-model once (offline, no download):
+OpenVINO is Intel's runtime for running a model on an Intel CPU, and it is
+what `config.yaml` runs by default:
+
+```yaml
+model:
+  weights: models/yolo26n_openvino_model
+```
+
+The folder is made once, offline, from the `.pt` weights (the last step of
+[Install](#install)):
 
 ```
 venv\Scripts\python scripts\export_openvino.py
 ```
 
-It writes `models\yolo26n_openvino_model\`; running it again prints `skip`,
-`--force` rewrites it, `--weights models/yolo26s.pt` exports the other model.
-Then switch with one line of `config.yaml`:
+Running it again prints `skip`, `--force` rewrites it, `--weights
+models/yolo26s.pt` exports the other model. The export fixes the input size:
+after changing `model.imgsz`, re-run it with `--force`.
+
+To go back to plain PyTorch, change the one line -- no export needed:
 
 ```yaml
 model:
-  weights: models/yolo26n_openvino_model
+  weights: models/yolo26n.pt
 ```
 
 Nothing else changes. Compare both on your own machine:
@@ -382,8 +405,9 @@ measured passes, openvino 2026.3.1):
 That is less than the 2-3x `ARCHITECTURE.md` estimated: here it is about
 1.5x (1.65x on a 20-pass run), and single runs vary by up to 30% on a
 4-core laptop CPU. Both formats find the same four people on `bus.jpg`, with
-boxes within 7 px of each other. The default stays `.pt` so a fresh clone
-works without the export step.
+boxes within 7 px of each other. OpenVINO is the default because it is the
+faster of the two here, on photos and on the live webcam alike; the price is
+the one-time export step after `fetch_models.py`.
 
 ## Config
 
@@ -453,7 +477,12 @@ codec OpenCV cannot read. FFmpeg may print a line of its own before it
 (`moov atom not found`); it is the same problem.
 
 **`run scripts/export_openvino.py first`, exit code 2** -- `model.weights`
-points at an OpenVINO folder that has not been exported yet.
+points at an OpenVINO folder that has not been exported yet. That is the
+shipped default, so a fresh clone sees this until the export has run once:
+`venv\Scripts\python scripts\export_openvino.py` (it needs the `.pt` from
+`scripts/fetch_models.py` first). A folder without its `*.xml` counts as not
+exported and is redone. Or run on PyTorch instead with
+`model.weights: models/yolo26n.pt` in `config.yaml`.
 
 **`rules file not found: ...` or `rules[<name>].<key>: ...`, exit code 2** --
 `rules.yaml` is missing or malformed; the message names the rule and key.

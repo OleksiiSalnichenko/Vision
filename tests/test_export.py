@@ -88,6 +88,24 @@ def test_force_replaces_an_existing_export(export_script, tmp_path, capsys):
     assert "FP32" in out
 
 
+def test_config_pointing_at_the_export_exports_from_the_pt_beside_it(
+    export_script, tmp_path, write_config, monkeypatch
+):
+    """OpenVINO is the default model, so a bare run must not refuse its own config."""
+    pt = tmp_path / "yolo26n.pt"
+    pt.write_bytes(b"weights")
+    folder = tmp_path / "yolo26n_openvino_model"
+    monkeypatch.setattr(
+        export_script, "CONFIG_PATH", write_config({"model.weights": str(folder)})
+    )
+
+    code = export_script.main([])
+
+    assert code == 0
+    assert [weights for weights, _ in export_script.exported] == [pt]
+    assert (folder / "yolo26n.xml").is_file()
+
+
 def test_half_written_export_is_redone_without_force(export_script, tmp_path):
     """A folder with no `.xml` is what an interrupted export leaves behind."""
     pt = tmp_path / "yolo26n.pt"

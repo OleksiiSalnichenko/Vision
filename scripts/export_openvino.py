@@ -65,6 +65,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def source_for(weights: Path) -> Path:
+    """The `.pt` an export is made from, given a `.pt` or an export folder.
+
+    `model.weights` points at the export folder by default (docs/adr/0021),
+    so a bare run finds the `.pt` beside it instead of refusing the folder.
+    """
+    if weights.name.endswith(core.detector.OPENVINO_SUFFIX):
+        stem = weights.name[: -len(core.detector.OPENVINO_SUFFIX)]
+        return weights.with_name(stem + WEIGHTS_SUFFIX)
+    return weights
+
+
 def target_for(weights: Path) -> Path:
     """Where Ultralytics writes the export: `<stem>_openvino_model/` beside the `.pt`."""
     return weights.with_name(weights.stem + core.detector.OPENVINO_SUFFIX)
@@ -101,7 +113,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{err}", file=sys.stderr)
         return EXIT_USAGE
 
-    weights = Path(args.weights if args.weights is not None else cfg.model.weights)
+    weights = source_for(Path(args.weights if args.weights is not None else cfg.model.weights))
     if weights.suffix.lower() != WEIGHTS_SUFFIX:
         print(f"only .pt weights can be exported, got: {weights}", file=sys.stderr)
         return EXIT_USAGE
