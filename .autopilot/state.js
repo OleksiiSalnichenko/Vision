@@ -11,7 +11,7 @@ window.STATE =
   "memoryFile": "CLAUDE.md",
   "skillDir": "C:/Users/asaln/.claude/skills/autopilot",
   "startedAt": "2026-09-28T23:46:32+02:00",
-  "updatedAt": "2026-10-03T17:07:51+02:00",
+  "updatedAt": "2026-10-03T17:07:52+02:00",
   "finishedAt": null,
   "stages": [
     {
@@ -50,13 +50,13 @@ window.STATE =
       "id": "build",
       "status": "active",
       "startedAt": "2026-10-03T16:44:44+02:00",
-      "note": "2 з 5 тасків готові"
+      "note": "3 з 5 тасків готові"
     },
     {
       "id": "review",
       "status": "active",
       "startedAt": "2026-10-03T16:52:00+02:00",
-      "note": "перевірено 2 з 5"
+      "note": "перевірено 3 з 5"
     },
     {
       "id": "final",
@@ -65,8 +65,8 @@ window.STATE =
   ],
   "requirements": {
     "total": 46,
-    "done": 12,
-    "inTicket": 34,
+    "done": 16,
+    "inTicket": 30,
     "inSpec": 0,
     "placeholder": 0,
     "deferred": 0,
@@ -161,11 +161,17 @@ window.STATE =
       "zone": [
         "training/build_dataset.py"
       ],
-      "status": "review",
+      "status": "done",
       "retries": 0,
       "repairs": 0,
       "handoffs": 0,
-      "startedAt": "2026-10-03T16:53:01+02:00"
+      "startedAt": "2026-10-03T16:53:01+02:00",
+      "finishedAt": "2026-10-03T17:07:52+02:00",
+      "commit": "7c5dacf",
+      "tests": {
+        "passed": 452,
+        "failed": 0
+      }
     },
     {
       "id": "04",
