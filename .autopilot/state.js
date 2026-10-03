@@ -11,7 +11,7 @@ window.STATE =
   "memoryFile": "CLAUDE.md",
   "skillDir": "C:/Users/asaln/.claude/skills/autopilot",
   "startedAt": "2026-09-28T23:46:32+02:00",
-  "updatedAt": "2026-10-03T17:19:09+02:00",
+  "updatedAt": "2026-10-03T17:40:43+02:00",
   "finishedAt": null,
   "stages": [
     {
@@ -48,25 +48,28 @@ window.STATE =
     },
     {
       "id": "build",
-      "status": "active",
+      "status": "done",
       "startedAt": "2026-10-03T16:44:44+02:00",
-      "note": "4 з 5 тасків готові"
+      "note": "5 з 5 тасків готові",
+      "finishedAt": "2026-10-03T17:40:43+02:00"
     },
     {
       "id": "review",
-      "status": "active",
+      "status": "done",
       "startedAt": "2026-10-03T16:52:00+02:00",
-      "note": "перевірено 4 з 5"
+      "note": "перевірено 5 з 5",
+      "finishedAt": "2026-10-03T17:40:43+02:00"
     },
     {
       "id": "final",
-      "status": "pending"
+      "status": "active",
+      "startedAt": "2026-10-03T17:40:43+02:00"
     }
   ],
   "requirements": {
     "total": 46,
-    "done": 26,
-    "inTicket": 20,
+    "done": 43,
+    "inTicket": 3,
     "inSpec": 0,
     "placeholder": 0,
     "deferred": 0,
@@ -245,15 +248,22 @@ window.STATE =
         "training/README.md",
         "README.md"
       ],
-      "status": "pending",
+      "status": "done",
+      "startedAt": "2026-10-03T17:25:06+02:00",
       "retries": 0,
       "repairs": 0,
-      "handoffs": 0
+      "handoffs": 0,
+      "finishedAt": "2026-10-03T17:40:43+02:00",
+      "commit": "e139359",
+      "tests": {
+        "passed": 478,
+        "failed": 0
+      }
     }
   ],
   "singlePass": null,
   "tests": {
-    "passed": 472,
+    "passed": 478,
     "failed": 0
   },
   "debt": {
@@ -297,11 +307,20 @@ window.STATE =
     "T04 training/kaggle/train.py:42 — ULTRALYTICS_PIN duplicates requirements.txt pin; no test keeps them equal",
     "T04 training/kaggle/train.py:251 — except (OSError, ValueError, KeyError) around all training hides Ultralytics tracebacks on a failed GPU run",
     "T04 training/kaggle_run.py:123 — any non-zero 'datasets status' read as 'dataset absent'; auth/network failure leads to a confusing create error",
-    "T04 training/kaggle_run.py:118 — upload --yes leaves dataset-metadata.json in the user's build folder, outside the interfaces.md format"
+    "T04 training/kaggle_run.py:118 — upload --yes leaves dataset-metadata.json in the user's build folder, outside the interfaces.md format",
+    "T05 training/evaluate.py:43 — offline evaluate imports networked training.kaggle.train (NETWORKED list); allowed dependency must be named in test_training_boundaries; train.py must do no network at module level",
+    "T05 training/evaluate.py:69 — bad label line (ID outside names, bad number) gives IndexError/ValueError traceback; want one sentence with file+line, exit 2",
+    "T05 training/evaluate.py:15 — OpenVINO folder with --imgsz different from export size: RuntimeError not caught, traceback; take size from export or one sentence",
+    "T05 training/evaluate.py:99 — each model loaded twice (YOLO + Detector), config.yaml re-read per model",
+    "T05 tests/test_training_evaluate.py — refusal \"model knows no class of the build\" untested",
+    "T05 tests/test_training_evaluate.py:73 — table parsed by fixed width line[:24]; brittle",
+    "T05 training/README.md:107 — Roboflow slugs/licences/counts from search text (403), date of check must be stated",
+    "T05 training/README.md:188 — Label Studio click path (local storage, delete tasks) not run; guide does not say so",
+    "T05 tests/test_training_e2e.py — prelabel never runs under a socket trap (story 25)"
   ],
   "reviewers": {
     "manifestSpec": "a9bcbf97b11ed7d7e",
     "craft": "a5ba648952a6eb7a2"
   },
   "blind": null
-}
+};

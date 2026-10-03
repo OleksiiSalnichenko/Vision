@@ -171,3 +171,16 @@ data/training/build/<name>/
 - **Пастка:** `check_det_dataset` в Ultralytics качає `Arial.ttf` на кожен `train`/`val` навіть з
   `YOLO_OFFLINE=1`. `train.py` підміняє `ultralytics.data.utils.check_font` на no-op (графіки
   вимкнені). Будь-який локальний виклик `YOLO.val` (таск 05 `evaluate.py`) потребує того самого.
+
+### З таска 05 — перевірка і посібник
+
+- `training.evaluate.main(argv)`: `--weights A [B …] --build NAME [--imgsz N]`. `val_set(build,
+  model_names, work) -> Path` (тимчасова копія val з абсолютним `path:` і мітками,
+  перенумерованими за назвою класу під кожну модель — Ultralytics резолвить `path: .` від cwd),
+  `score(weights, build, imgsz, work) -> dict[name, (mAP50, mAP50-95)]`,
+  `seconds_per_frame(weights, images, imgsz) -> float` (`bench.warmup`/`bench.runs` з
+  `config.yaml`), `table(...) -> str`. Рядок `all` — середнє лише спільних класів. Модульні
+  `BUILD_ROOT`, `TRAINING_CONFIG_PATH`, `CONFIG_PATH`.
+- `training.kaggle.train.no_font_download()` — єдина підміна `check_font`; кличуть `train.py` і
+  `evaluate.py`.
+- `training/README.md` — посібник користувача + розділ «For the agent».
