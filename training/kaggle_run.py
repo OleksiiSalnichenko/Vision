@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -48,6 +49,9 @@ TRAIN_SCRIPT = Path(__file__).resolve().parent / "kaggle" / "train.py"
 SETTINGS_SCRIPT = Path(__file__).resolve().parent / "settings.py"
 SETTINGS_SLOT = "_SETTINGS_SOURCE: str | None = None"
 DATASET_LICENSE = "CC0-1.0"
+# How the kaggle CLI reports a dataset it does not have ("404 - Not Found", or
+# "404 Client Error: Not Found ..." in newer versions), as opposed to 401/403/network.
+NOT_FOUND = r"\b404\b"
 
 NO_KAGGLE_MESSAGE = (
     "kaggle is not installed -- run: "
@@ -76,16 +80,31 @@ class _KaggleFailed(Exception):
     """The kaggle CLI itself failed; it has already said why on the console."""
 
 
-def _kaggle(*args: str, quiet: bool = False) -> int:
-    """Run the kaggle CLI; its own output goes to the console unless `quiet`."""
-    out = subprocess.DEVNULL if quiet else None
-    return subprocess.run([*KAGGLE_EXE, *args], stdout=out, stderr=out, check=False).returncode
+def _kaggle(*args: str, capture: bool = False) -> subprocess.CompletedProcess:
+    """Run the kaggle CLI; its own output goes to the console unless `capture`."""
+    try:
+        return subprocess.run([*KAGGLE_EXE, *args], capture_output=capture, text=True,
+                              errors="replace", check=False)
+    except OSError as error:  # the executable is gone or will not start
+        raise _KaggleFailed(f"cannot run {KAGGLE_EXE[0]}: {error}") from error
 
 
 def _run(*args: str) -> None:
-    code = _kaggle(*args)
+    code = _kaggle(*args).returncode
     if code:
         raise _KaggleFailed(f"kaggle {' '.join(args[:2])} failed (exit {code})")
+
+
+def _dataset_exists(dataset: str) -> bool:
+    """Whether Kaggle has `dataset`; any failure other than "not found" is raised."""
+    done = _kaggle("datasets", "status", dataset, capture=True)
+    if done.returncode == 0:
+        return True
+    said = f"{done.stdout or ''}\n{done.stderr or ''}".strip()
+    if re.search(NOT_FOUND, said):
+        return False
+    cause = said.splitlines()[-1] if said else "no output"
+    raise _KaggleFailed(f"kaggle datasets status failed (exit {done.returncode}): {cause}")
 
 
 def _size_mb(folder: Path) -> float:
@@ -115,17 +134,23 @@ def upload(cfg, build_name: str, yes: bool) -> None:
               f"to Kaggle as the private dataset {dataset}")
         print("nothing sent; run again with --yes to upload")
         return
-    (build / "dataset-metadata.json").write_text(json.dumps({
+    exists = _dataset_exists(dataset)
+    # The CLI reads the metadata from the folder it uploads; it is gone again
+    # afterwards, so the build stays exactly as build_dataset.py wrote it.
+    metadata = build / "dataset-metadata.json"
+    metadata.write_text(json.dumps({
         "title": cfg.kaggle.dataset_slug,
         "id": dataset,
         "licenses": [{"name": DATASET_LICENSE}],
     }, indent=2), encoding="utf-8")
-    exists = _kaggle("datasets", "status", dataset, quiet=True) == 0
-    if exists:
-        _run("datasets", "version", "-p", str(build), "-m", f"build {build_name}",
-             "--dir-mode", "zip")
-    else:  # a new dataset is private unless --public is passed
-        _run("datasets", "create", "-p", str(build), "--dir-mode", "zip")
+    try:
+        if exists:
+            _run("datasets", "version", "-p", str(build), "-m", f"build {build_name}",
+                 "--dir-mode", "zip")
+        else:  # a new dataset is private unless --public is passed
+            _run("datasets", "create", "-p", str(build), "--dir-mode", "zip")
+    finally:
+        metadata.unlink(missing_ok=True)
     print(f"uploaded {build} as {dataset}")
 
 
@@ -165,7 +190,8 @@ def _bundled_script() -> str:
     """`train.py` with `training/settings.py` embedded: a script kernel is one file."""
     script = TRAIN_SCRIPT.read_text(encoding="utf-8")
     if script.count(SETTINGS_SLOT) != 1:
-        raise RuntimeError(f"{TRAIN_SCRIPT} has no single line {SETTINGS_SLOT!r}")
+        raise UsageError(f"{TRAIN_SCRIPT} has no single line {SETTINGS_SLOT!r}; "
+                         "restore it before pushing")
     settings = SETTINGS_SCRIPT.read_text(encoding="utf-8")
     return script.replace(SETTINGS_SLOT, f"_SETTINGS_SOURCE: str | None = {settings!r}")
 

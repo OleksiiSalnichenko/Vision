@@ -26,15 +26,28 @@ from pathlib import Path
 args = sys.argv[1:]
 with open(os.environ["FAKE_KAGGLE_LOG"], "a", encoding="utf-8") as log:
     log.write(json.dumps(args) + "\n")
+if " ".join(args[:2]) == os.environ.get("FAKE_FAIL"):
+    print("500 - Internal Server Error")
+    sys.exit(1)
 if args[:2] == ["datasets", "status"]:
+    print(os.environ.get("FAKE_STATUS_OUTPUT", "ready"))
     sys.exit(int(os.environ.get("FAKE_STATUS_EXIT", "0")))
+if args[:2] in (["datasets", "create"], ["datasets", "version"]):
+    shutil.copy(Path(args[args.index("-p") + 1]) / "dataset-metadata.json",
+                os.environ["FAKE_KAGGLE_META"])
 if args[:2] == ["kernels", "push"]:
     shutil.copytree(args[args.index("-p") + 1], os.environ["FAKE_KAGGLE_PUSHED"])
 if args[:2] == ["kernels", "output"]:
     out = Path(args[args.index("-p") + 1])
-    (out / "best.pt").write_bytes(b"fake weights")
-    (out / "metrics.json").write_text('{"mode": "full"}', encoding="utf-8")
+    files = os.environ.get("FAKE_OUTPUT_FILES", "best.pt metrics.json").split()
+    if "best.pt" in files:
+        (out / "best.pt").write_bytes(b"fake weights")
+    if "metrics.json" in files:
+        (out / "metrics.json").write_text('{"mode": "full"}', encoding="utf-8")
 """
+
+# What the kaggle CLI prints for a dataset Kaggle does not have (exit 1).
+NOT_FOUND = "404 - Not Found"
 
 WEIGHTS_BYTES = b"fake weights"
 
@@ -47,6 +60,7 @@ def kaggle(tmp_path, monkeypatch):
     log = tmp_path / "calls.jsonl"
     monkeypatch.setenv("FAKE_KAGGLE_LOG", str(log))
     monkeypatch.setenv("FAKE_KAGGLE_PUSHED", str(tmp_path / "pushed"))
+    monkeypatch.setenv("FAKE_KAGGLE_META", str(tmp_path / "sent-metadata.json"))
     monkeypatch.setattr(kaggle_run, "KAGGLE_EXE", [sys.executable, str(fake)])
 
     key = tmp_path / ".kaggle" / "kaggle.json"
@@ -109,6 +123,7 @@ def test_upload_without_yes_only_shows_the_plan(kaggle, capsys):
 
 def test_upload_creates_the_dataset_the_first_time(kaggle, monkeypatch):
     monkeypatch.setenv("FAKE_STATUS_EXIT", "1")  # Kaggle does not know the dataset yet
+    monkeypatch.setenv("FAKE_STATUS_OUTPUT", NOT_FOUND)
     build = kaggle.root / "build" / "first"
 
     assert kaggle_run.main(["upload", "--build", "first", "--yes"]) == 0
@@ -117,8 +132,9 @@ def test_upload_creates_the_dataset_the_first_time(kaggle, monkeypatch):
         ["datasets", "status", "someone/my-data"],
         ["datasets", "create", "-p", str(build), "--dir-mode", "zip"],
     ]
-    meta = json.loads((build / "dataset-metadata.json").read_text(encoding="utf-8"))
+    meta = json.loads((kaggle.root / "sent-metadata.json").read_text(encoding="utf-8"))
     assert meta["id"] == "someone/my-data"
+    assert not (build / "dataset-metadata.json").exists()  # the user's build stays as built
 
 
 def test_upload_adds_a_version_when_the_dataset_exists(kaggle):
@@ -131,6 +147,49 @@ def test_upload_adds_a_version_when_the_dataset_exists(kaggle):
     assert version[:4] == ["datasets", "version", "-p", str(build)]
     assert version[-2:] == ["--dir-mode", "zip"]
     assert "-m" in version
+    assert not (build / "dataset-metadata.json").exists()
+
+
+def test_a_failed_status_is_not_taken_for_a_missing_dataset(kaggle, monkeypatch, capsys):
+    """An auth or network failure must not end in `datasets create` of a dataset that exists."""
+    monkeypatch.setenv("FAKE_STATUS_EXIT", "1")
+    monkeypatch.setenv("FAKE_STATUS_OUTPUT", "401 - Unauthorized")
+    build = kaggle.root / "build" / "first"
+
+    assert kaggle_run.main(["upload", "--build", "first", "--yes"]) == 1
+
+    assert kaggle.calls() == [["datasets", "status", "someone/my-data"]]
+    err = capsys.readouterr().err.strip().splitlines()
+    assert len(err) == 1
+    assert "401 - Unauthorized" in err[0]
+    assert not (build / "dataset-metadata.json").exists()
+
+
+def test_a_failed_upload_leaves_no_metadata_in_the_build(kaggle, monkeypatch):
+    monkeypatch.setenv("FAKE_FAIL", "datasets version")
+    build = kaggle.root / "build" / "first"
+
+    assert kaggle_run.main(["upload", "--build", "first", "--yes"]) == 1
+    assert not (build / "dataset-metadata.json").exists()
+
+
+def test_a_failing_kaggle_cli_is_exit_1_with_one_sentence(kaggle, monkeypatch, capsys):
+    monkeypatch.setenv("FAKE_FAIL", "kernels status")
+
+    assert kaggle_run.main(["status", "--yes"]) == 1
+    err = capsys.readouterr().err.strip().splitlines()
+    assert len(err) == 1
+    assert "kaggle kernels status failed" in err[0]
+
+
+def test_a_kaggle_cli_that_will_not_start_is_exit_1_with_one_sentence(kaggle, monkeypatch,
+                                                                      tmp_path, capsys):
+    monkeypatch.setattr(kaggle_run, "KAGGLE_EXE", [str(tmp_path / "gone" / "kaggle.exe")])
+
+    assert kaggle_run.main(["status", "--yes"]) == 1
+    err = capsys.readouterr().err.strip().splitlines()
+    assert len(err) == 1
+    assert "kaggle.exe" in err[0]
 
 
 def test_upload_of_a_missing_build_is_a_usage_error(kaggle, capsys):
@@ -209,6 +268,19 @@ def test_the_pushed_script_carries_the_settings_loader_with_it(kaggle, tmp_path)
     assert done.stdout.strip() == "my-kernel"
 
 
+def test_a_train_script_without_the_settings_slot_is_one_sentence(kaggle, monkeypatch,
+                                                                   tmp_path, capsys):
+    edited = tmp_path / "train.py"
+    edited.write_text("print('the slot line was edited away')\n", encoding="utf-8")
+    monkeypatch.setattr(kaggle_run, "TRAIN_SCRIPT", edited)
+
+    assert kaggle_run.main(["train", "--yes"]) == 2
+    err = capsys.readouterr().err.strip().splitlines()
+    assert len(err) == 1
+    assert "_SETTINGS_SOURCE" in err[0]
+    assert kaggle.calls() == []
+
+
 def test_status_asks_for_the_kernel(kaggle):
     assert kaggle_run.main(["status", "--yes"]) == 0
     assert kaggle.calls() == [["kernels", "status", "someone/my-kernel"]]
@@ -240,6 +312,16 @@ def test_fetch_does_not_overwrite_a_model_without_force(kaggle, capsys):
 
     assert kaggle_run.main(["fetch", "--name", "pen82", "--yes", "--force"]) == 0
     assert existing.read_bytes() == WEIGHTS_BYTES
+
+
+def test_fetch_without_best_pt_in_the_output_is_one_sentence(kaggle, monkeypatch, capsys):
+    monkeypatch.setenv("FAKE_OUTPUT_FILES", "metrics.json")  # the run has not finished
+
+    assert kaggle_run.main(["fetch", "--name", "pen82", "--yes"]) == 2
+    err = capsys.readouterr().err.strip().splitlines()
+    assert len(err) == 1
+    assert "best.pt" in err[0]
+    assert list((kaggle.root / "models").iterdir()) == []
 
 
 def test_fetch_without_yes_downloads_nothing(kaggle, capsys):

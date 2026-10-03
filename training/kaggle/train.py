@@ -257,6 +257,8 @@ def main(argv: list[str] | None = None) -> int:
             return EXIT_USAGE
         metrics = train(data_root, out, coco_root, args.smoke)
     except (OSError, ValueError, KeyError) as error:
+        if on_kaggle:  # the kernel log is all there is: keep Ultralytics' full traceback
+            raise
         print(error, file=sys.stderr)
         return EXIT_USAGE
     print(json.dumps(metrics, indent=2))
