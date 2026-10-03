@@ -9,11 +9,11 @@
 |----|---------------------|--------|-----------|-----|
 | R01 | «працюємо над фазою 4» | in-ticket | — | spec: Історія 1 → T01, T05 |
 | R02 | «Only if YOLO26n's stock classes are insufficient — which they are for "pen" and "flower", since neither is in COCO.» | in-ticket | — | spec: Історія 2; реальний результат — Поза рамками (G01) → T05 |
-| R03 | «Custom classes (a pen, flowers) are needed later, so the pipeline must support fine-tuning without being restructured.» | in-ticket | — | spec: Історія 3 → T01 |
+| R03 | «Custom classes (a pen, flowers) are needed later, so the pipeline must support fine-tuning without being restructured.» | done | — | spec: Історія 3 → T01 |
 | R04 | «\| 4 — custom classes \| `training/` \| one config line \|» | in-ticket | — | spec: Історія 3 → T05 |
-| R05 | «Method: shoot 10 minutes of video of the object from many angles» | in-ticket | — | spec: Історія 6, 24 → T01 |
-| R06 | «take every 20th frame (~900 images with natural variation in angle, blur and lighting)» | in-ticket | — | spec: Історії 6–7 → T01 |
-| R07 | «annotate in Label Studio» / «Runs locally via pip. Data never leaves the machine.» | in-ticket | — | spec: Історії 8–9, 31 → T02 |
+| R05 | «Method: shoot 10 minutes of video of the object from many angles» | done | — | spec: Історія 6, 24 → T01 |
+| R06 | «take every 20th frame (~900 images with natural variation in angle, blur and lighting)» | done | — | spec: Історії 6–7 → T01 |
+| R07 | «annotate in Label Studio» / «Runs locally via pip. Data never leaves the machine.» | done | — | spec: Історії 8–9, 31 → T02 |
 | R08 | «export in YOLO format» / «Exports YOLO format directly.» | in-ticket | — | spec: Історія 10 → T03 |
 | R09 | «fine-tune on Kaggle» / «Free GPU, private datasets, sessions do not drop mid-run.» | in-ticket | — | spec: Історії 17, 20 → T04 |
 | R10 | «download `best.pt`» | in-ticket | — | spec: Історія 20; реальний — Поза рамками → T04 |
@@ -29,15 +29,15 @@
 | R20 | «Whether `yolo26n` is accurate enough for a pen. Unknown until I test on my own photos. The fallback path is `yolo26s`, or `imgsz: 960`, or shooting closer.» | in-ticket | — | spec: Історія 23; реальний — Поза рамками → T05 |
 | R21 | «**Training must happen in the cloud.** … Training locally on CPU would take 6-10 hours where a GPU takes 15 minutes.» | in-ticket | — | spec: Історія 17 → T04 |
 | R22 | «Kaggle (free P100, 30 GPU-hours/week, private datasets) is the chosen provider.» | in-ticket | — | spec: Історія 17 → T04 |
-| R23 | «Instance segmentation \| Boxes only. Polygon annotation is 3-5x slower than boxes» | in-ticket | — | spec: Історія 8 → T02 |
-| R24 | «**Fully offline at runtime.** … Never at inference time.» / «No runtime network calls, ever.» | in-ticket | — | spec: Історія 25 → T01 |
-| R25 | «After this step the project never needs the network again until phase 4.» | in-ticket | — | spec: Історія 25 → T01 |
+| R23 | «Instance segmentation \| Boxes only. Polygon annotation is 3-5x slower than boxes» | done | — | spec: Історія 8 → T02 |
+| R24 | «**Fully offline at runtime.** … Never at inference time.» / «No runtime network calls, ever.» | done | — | spec: Історія 25 → T01 |
+| R25 | «After this step the project never needs the network again until phase 4.» | done | — | spec: Історія 25 → T01 |
 | R26 | «**Must eventually run on a Raspberry Pi.** The Pi sets the performance budget» / «\| Detector \| **Ultralytics YOLO26n**, one model for every phase \|» | in-ticket | — | spec: Історія 21; Поза рамками → T04 |
 | R27 | «**`n`/`s`/`m` are sizes of one model, not different models.** Switching is one config line. Do not build abstraction around "model selection".» | in-ticket | — | spec: Історія 3 → T05 |
-| R28 | «**YOLO26 is NMS-free.** … Do not add one» | in-ticket | — | spec: Історія 26 → T02 |
-| R29 | «**`core/` must not import from `ui/`** or know how it was launched.» | in-ticket | — | spec: Межі: `core/` не імпортує `training/` (тест) → T01 |
-| R30 | «\| Code, comments, logs, README, UI strings \| **all English** \|» | in-ticket | — | spec: Історія 27 → T01 |
-| R31 | «Ask before installing anything system-wide.» | in-ticket | — | spec: Історія 8; Рішення 3 → T02 |
+| R28 | «**YOLO26 is NMS-free.** … Do not add one» | done | — | spec: Історія 26 → T02 |
+| R29 | «**`core/` must not import from `ui/`** or know how it was launched.» | done | — | spec: Межі: `core/` не імпортує `training/` (тест) → T01 |
+| R30 | «\| Code, comments, logs, README, UI strings \| **all English** \|» | done | — | spec: Історія 27 → T01 |
+| R31 | «Ask before installing anything system-wide.» | done | — | spec: Історія 8; Рішення 3 → T02 |
 | R32 | «Stop after each phase and show me what to run.» | in-ticket | — | spec: Історія 28 → T05 |
 | R33 | «I am new to computer vision. When you make a technical choice, say in one line why — but do not turn the session into a lecture.» | in-ticket | — | spec: Історія 27 → T05 |
 | R34 | «If something in `ARCHITECTURE.md` turns out to be wrong once code exists, say so and propose the change rather than quietly working around it.» | in-ticket | — | spec: Історія 29 → T05 |
@@ -49,10 +49,11 @@
 | R40i | *(мається на увазі)* `config.yaml` `classes` і `rules.yaml` (класи правил, `handlers.py`) мають працювати з назвами нових класів | in-ticket | — | spec: Історія 5 → T04 |
 | R41i | *(мається на увазі)* датасет потрібно поділити на train/val і описати `data.yaml` для навчання YOLO | in-ticket | — | spec: Історії 13–14 → T03 |
 | R42i | *(мається на увазі)* треба спосіб перевірити, чи нова модель достатньо точна (n проти s, `imgsz: 960`) на власних фото | in-ticket | — | spec: Історія 23 → T05 |
-| R43i | *(мається на увазі)* мережевих кроків стає більше (Label Studio, Kaggle, готові датасети); правило «мережа лише в `pip install` і `fetch_models.py`» треба розширити так, щоб рантайм лишився офлайн | in-ticket | — | spec: Історія 25; Рішення 10 → T01 |
+| R43i | *(мається на увазі)* мережевих кроків стає більше (Label Studio, Kaggle, готові датасети); правило «мережа лише в `pip install` і `fetch_models.py`» треба розширити так, щоб рантайм лишився офлайн | done | — | spec: Історія 25; Рішення 10 → T01 |
 | G01 | «зроби всю роботу. дай інстукцію, навіть краще - задокументу. Коли я цим вирішу зайнятися - надам всі данні... і ти повчишь можель» | in-ticket | 2026-10-03, відповідь на питання 1: збірка здає весь інструментарій і документацію, перевірені без реальних даних; навчання на реальних даних — пізніше, коли користувач принесе дані, і веде його агент | spec: Історії 1, 32; Поза рамками → T01, T05 |
 | G02 | «тоді А» (на «А — через `kaggle` CLI: ключ кладеш сам, я заливаю датасет і ноутбук, запускаю, забираю `best.pt`; кожну заливку — з твого "так"») | in-ticket | 2026-10-03, відповідь на питання 2. Чи є акаунт — не сказано; документація описує, як його завести і підтвердити телефон для GPU | spec: Історії 17–20 → T04, T05 |
 | G03 | «просто, навчені обьєкти додай додавай в список» + «так» (на «одна модель на всі 82 класи: частина COCO з Kaggle + твої кадри, люди й телефони на них розмічені поточною моделлю») | in-ticket | 2026-10-03, відповідь на питання 3: нові класи додаються до 80 COCO в одній моделі; список класів у застосунку показує всі; точність COCO-класів міряється, стара модель лишається запасною | spec: Історії 2, 12, 22; Рішення 1, 8 → T01, T03, T04 |
+| D01 | *(виявлено в таску 02)* у Label Studio `--host` задає лише URL у посиланнях; сокет слухає `--internal-host`, за замовчуванням `0.0.0.0` | in-ticket | обслуговує R07 («Data never leaves the machine»): `start` передає `--internal-host 127.0.0.1`; spec історія 9 виправлена 2026-10-03 | spec: Історія 9 → T02 |
 
 G1 (2026-10-03): брифінг закінчено, три питання. Рядки зі статусом `open` чекають
 лише на специфікацію — кожен має відповідь у брифі або в G01–G03, рішення

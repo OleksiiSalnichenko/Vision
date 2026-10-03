@@ -117,3 +117,37 @@ data/training/build/<name>/
   імпортують `training_text` звідти (не копіюють значення з `training.yaml`).
 - `tests/test_training_boundaries.py`: `NETWORKED = {kaggle_run.py, label_studio.py,
   kaggle/train.py}`; кожен інший `training/*.py` сканується автоматично на мережеві імпорти.
+
+### З таска 02 — Label Studio
+
+- `training.label_studio`: `main(argv)` з `setup|start|config`; `labeling_config(classes) -> str`;
+  модульні `VENV_DIR`, `TRAINING_ROOT`, `TRAINING_CONFIG_PATH`, `PY_LAUNCHER`;
+  `IMAGE_NAME="image"`, `LABEL_NAME="label"`; `NO_REPORTING` — словник змінних
+  (`LABEL_STUDIO_COLLECT_ANALYTICS=false`, `LABEL_STUDIO_LATEST_VERSION_CHECK=false`).
+  `setup`: код 1 при збої pip/venv, 2 без `py`. `start` прив'язує сокет через
+  `--internal-host 127.0.0.1` (у LS `--host` задає лише URL у посиланнях).
+- `training.prelabel`: `main(argv)` — `--weights W --frames DIR [--out F] [--skip-labelled
+  EXPORT dir|zip]`, за замовчуванням `data/training/tasks.json`; `tasks(images: dict[Path,
+  (w,h)], detections_by_image: dict[Path, list[Detection]], classes, image_root) -> list[dict]`;
+  `labelled_stems(export) -> set[str]` (будь-який `labels/*.txt`, навіть порожній, = розмічений;
+  розпізнає імена LS з префіксом `<id>-stem` / `<id>__stem`). Завдання: `{"data": {"image":
+  "/data/local-files/?d=frames/<stem>/<file>"}, "predictions": [{"result": [rectanglelabels у
+  відсотках, from_name "label", to_name "image", score]}]}`. Поріг — `model.conf`
+  (через `dataclasses.replace(conf_debug=conf)`, без `is_debug`).
+
+### З таска 03 — збирач датасету
+
+- `training.build_dataset`: `Item(image: Path, labels: tuple[Label, ...] | None, extra: bool=False)`
+  (frozen), `Label = (cls_name, cx, cy, w, h)` нормовані; `labels=None` — кадр без файлу розмітки.
+- `read_ls_export(path, classes, unpack_dir=None) -> list[Item]` (zip потребує `unpack_dir`;
+  клас поза `classes` → `ValueError`); `read_extra(path, classes) -> list[Item]` (`classes.txt`
+  або `data.yaml`, імена без урахування регістру); `pick_extra(pool, own, fraction, seed) ->
+  (picked, short)`; `pseudo_labels(items, detector, custom, conf, iou_drop) -> list[Item]`;
+  `split(items, val_fraction, seed) -> (train, val)`; `write_build(out_dir, train, val, names,
+  new_classes, mode, training_yaml, base_weights, force=False) -> Path`.
+- `main(argv)`: `--export --name [--extra DIR] [--rough] [--force]`; модульні `BUILD_ROOT`,
+  `TRAINING_CONFIG_PATH`, `CONFIG_PATH`, `Detector` — тести підміняють.
+- Відео кадру — з імені `<video>_<index>`, з відрізаним префіксом завантаження LS (8 hex).
+  `training.base_weights` резолвиться від `PROJECT_ROOT` (не від cwd). Негатив = кадр без
+  рамок `training.classes` (у повному режимі може мати псевдорамки 80 класів).
+  `manifest.counts` перелічує всі імена, з нулями; зовнішні кадри — `extra_NNNNN.<ext>`.

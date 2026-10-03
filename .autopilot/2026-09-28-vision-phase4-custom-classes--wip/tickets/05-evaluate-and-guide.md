@@ -54,6 +54,13 @@ Kaggle → зйомка → кадри → Label Studio → (груба моде
       `yolo26s`); підключення (`fetch` → `export_openvino.py --weights` → рядок
       `model.weights`, `classes`, приклад правила `class: pen` у `rules.yaml`);
       відкат на стару модель; «For the agent»; troubleshooting
+- [ ] Посібник описує поведінку, яку збудували 02 і 03 (див. `interfaces.md`): `setup`
+      пропускає установку лише коли `label-studio.exe` уже є; `start` слухає тільки
+      `127.0.0.1` і виставляє `LABEL_STUDIO_COLLECT_ANALYTICS=false`,
+      `LABEL_STUDIO_LATEST_VERSION_CHECK=false` (назви обидві, і що Sentry у відкритій версії
+      без DSN); `prelabel` працює лише з кадрами під `data/training`; кадри з `--extra` не
+      отримують псевдорозмітки 80 класів (люди на них — фон), і перевірка «є рамки нових
+      класів» рахує тільки власні кадри
 - [ ] Кожна команда в посібнику існує й працює (перевір `--help` кожного скрипта)
 - [ ] `README.md`: короткий розділ «Custom classes (phase 4)» з посиланням на
       `training/README.md` — нічого більше в ньому не міняти
