@@ -151,3 +151,23 @@ data/training/build/<name>/
   `training.base_weights` резолвиться від `PROJECT_ROOT` (не від cwd). Негатив = кадр без
   рамок `training.classes` (у повному режимі може мати псевдорамки 80 класів).
   `manifest.counts` перелічує всі імена, з нулями; зовнішні кадри — `extra_NNNNN.<ext>`.
+
+### З таска 04 — Kaggle
+
+- `training.kaggle_run.main(argv)`: `check` | `upload --build NAME` | `train [--rough]` | `status` |
+  `fetch --name N [--force]`; чотири останні — `[--yes]` (без нього план і код 0). Модульні
+  `KAGGLE_EXE: list[str] | None` (префікс команди), `KAGGLE_JSON`, `TRAINING_CONFIG_PATH`,
+  `BUILD_ROOT`, `MODELS_DIR`. Коди: 2 — використання, 1 — збій `kaggle` CLI.
+  `upload` пише `dataset-metadata.json` у саму build-теку; «вперше» — за кодом
+  `kaggle datasets status`. `train` вставляє текст `training/settings.py` у пушений `train.py`
+  (скриптове ядро Kaggle — один файл).
+- `training/kaggle/train.py`: `main(argv)` — `--data-root`, `--coco-root`, `--out`, `--smoke`; без
+  аргументів = запуск на Kaggle (pip `ultralytics==8.4.157`, шукає `manifest.json` і
+  `annotations/instances_train2017.json` під `/kaggle/input` до 4 рівнів, пише в
+  `/kaggle/working`). `coco_labels(instances, names, count, seed) -> dict[file_name, list[yolo
+  рядків]]`; режим — з `manifest.json` (`rough` = `rough.epochs`, без COCO). Smoke: `imgsz` 64.
+- COCO: `awsaf49/coco-2017-dataset` існує — `coco2017/annotations/instances_{train,val}2017.json`,
+  `coco2017/{train,val}2017/*.jpg`.
+- **Пастка:** `check_det_dataset` в Ultralytics качає `Arial.ttf` на кожен `train`/`val` навіть з
+  `YOLO_OFFLINE=1`. `train.py` підміняє `ultralytics.data.utils.check_font` на no-op (графіки
+  вимкнені). Будь-який локальний виклик `YOLO.val` (таск 05 `evaluate.py`) потребує того самого.

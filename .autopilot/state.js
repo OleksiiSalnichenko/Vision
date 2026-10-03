@@ -11,7 +11,7 @@ window.STATE =
   "memoryFile": "CLAUDE.md",
   "skillDir": "C:/Users/asaln/.claude/skills/autopilot",
   "startedAt": "2026-09-28T23:46:32+02:00",
-  "updatedAt": "2026-10-03T17:07:52+02:00",
+  "updatedAt": "2026-10-03T17:19:09+02:00",
   "finishedAt": null,
   "stages": [
     {
@@ -50,13 +50,13 @@ window.STATE =
       "id": "build",
       "status": "active",
       "startedAt": "2026-10-03T16:44:44+02:00",
-      "note": "3 з 5 тасків готові"
+      "note": "4 з 5 тасків готові"
     },
     {
       "id": "review",
       "status": "active",
       "startedAt": "2026-10-03T16:52:00+02:00",
-      "note": "перевірено 3 з 5"
+      "note": "перевірено 4 з 5"
     },
     {
       "id": "final",
@@ -65,8 +65,8 @@ window.STATE =
   ],
   "requirements": {
     "total": 46,
-    "done": 16,
-    "inTicket": 30,
+    "done": 26,
+    "inTicket": 20,
     "inSpec": 0,
     "placeholder": 0,
     "deferred": 0,
@@ -197,11 +197,17 @@ window.STATE =
         "training/kaggle_run.py",
         "training/kaggle/"
       ],
-      "status": "in-progress",
+      "status": "done",
       "retries": 0,
       "repairs": 0,
       "handoffs": 0,
-      "startedAt": "2026-10-03T16:53:01+02:00"
+      "startedAt": "2026-10-03T16:53:01+02:00",
+      "finishedAt": "2026-10-03T17:19:09+02:00",
+      "commit": "85bed54",
+      "tests": {
+        "passed": 472,
+        "failed": 0
+      }
     },
     {
       "id": "05",
@@ -247,7 +253,7 @@ window.STATE =
   ],
   "singlePass": null,
   "tests": {
-    "passed": 452,
+    "passed": 472,
     "failed": 0
   },
   "debt": {
@@ -283,7 +289,15 @@ window.STATE =
     "T03 training/build_dataset.py:313 — own frames copied by stem without a collision check; same stem in two subfolders overwrites silently",
     "T03 training/build_dataset.py:361 — a model-load error other than OSError/ValueError gives a traceback",
     "T03 training/build_dataset.py:418 — summary re-reads manifest.json from disk; the 'boxes:' line is untested",
-    "T03 tests/test_training_build.py:361 — Cyrillic comment claims the stub read the file; it reads nothing"
+    "T03 tests/test_training_build.py:361 — Cyrillic comment claims the stub read the file; it reads nothing",
+    "T04 training/kaggle/train.py:118 — find_dir (Kaggle-only path search, marker with sub-path) has no test; a bug shows only after a push, on the user's GPU hours",
+    "T04 tests/test_training_kaggle_run.py — 'kaggle CLI fails -> exit 1' and 'fetch with no best.pt' paths untested",
+    "T04 training/kaggle/train.py:166 — check_font no-op proven only because Arial.ttf is not cached here; ticket 05 must repeat it (duplication) — one shared helper with a cache-independent test",
+    "T04 training/kaggle_run.py:164 — settings.py splice mismatch raises RuntimeError uncaught in main (traceback)",
+    "T04 training/kaggle/train.py:42 — ULTRALYTICS_PIN duplicates requirements.txt pin; no test keeps them equal",
+    "T04 training/kaggle/train.py:251 — except (OSError, ValueError, KeyError) around all training hides Ultralytics tracebacks on a failed GPU run",
+    "T04 training/kaggle_run.py:123 — any non-zero 'datasets status' read as 'dataset absent'; auth/network failure leads to a confusing create error",
+    "T04 training/kaggle_run.py:118 — upload --yes leaves dataset-metadata.json in the user's build folder, outside the interfaces.md format"
   ],
   "reviewers": {
     "manifestSpec": "a9bcbf97b11ed7d7e",
