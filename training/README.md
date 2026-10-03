@@ -3,6 +3,7 @@
 This guide takes you from a phone video of your desk to a model that finds a
 pen and a flower next to the 80 classes it already knows, switched on with one
 line of `config.yaml`. Every step is one command and one line of *why*.
+The user's steps in Ukrainian: [README.uk.md](README.uk.md).
 
 Everything runs on this laptop and offline, except four named steps:
 `pip install`, `label_studio.py setup` (pip), the `kaggle_run.py` subcommands
