@@ -70,6 +70,18 @@ def settings_module() -> types.ModuleType:
     return module
 
 
+def no_font_download() -> None:
+    """Stop Ultralytics fetching `Arial.ttf` on every `train` / `val`.
+
+    Its dataset check downloads the font from Ultralytics' servers unless it is
+    already cached, `YOLO_OFFLINE` or not. The font only draws plots, and every
+    caller here runs with plots off. `training/evaluate.py` calls this too.
+    """
+    import ultralytics.data.utils  # noqa: PLC0415 -- after YOLO_OFFLINE is set
+
+    ultralytics.data.utils.check_font = lambda *args, **kwargs: None
+
+
 def coco_labels(instances: dict, names: list[str], count: int, seed: int) -> dict[str, list[str]]:
     """YOLO label lines for `count` random images of a COCO `instances_*.json`.
 
@@ -163,12 +175,8 @@ def train(data_root: Path, out: Path, coco_root: Path | None, smoke: bool) -> di
     device = "cpu" if smoke else None
 
     from ultralytics import YOLO  # noqa: PLC0415 -- after YOLO_OFFLINE is set
-    import ultralytics.data.utils  # noqa: PLC0415
 
-    # Every dataset check fetches Arial.ttf from Ultralytics' servers unless it is
-    # already cached, YOLO_OFFLINE or not. The font only draws plots, and plots are off.
-    ultralytics.data.utils.check_font = lambda *args, **kwargs: None
-
+    no_font_download()
     out.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="vision-train-") as tmp:
         work = Path(tmp)

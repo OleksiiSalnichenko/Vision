@@ -409,6 +409,13 @@ boxes within 7 px of each other. OpenVINO is the default because it is the
 faster of the two here, on photos and on the live webcam alike; the price is
 the one-time export step after `fetch_models.py`.
 
+## Custom classes (phase 4)
+
+Teaching the model new classes (`pen` and `flower`) from your own video --
+shooting, labelling in Label Studio, building the dataset, training on a free
+Kaggle GPU, comparing and switching models -- is a separate guide:
+[training/README.md](training/README.md).
+
 ## Config
 
 `config.yaml` is the single source of every number, threshold and path. There
