@@ -1,359 +1,261 @@
 window.STATE =
 {
-  "slug": "vision-phase3-desktop",
-  "dir": "2026-09-27-vision-phase3-desktop",
-  "title": "Vision — фаза 3: десктопний застосунок (PySide6)",
+  "slug": "vision-phase4-custom-classes",
+  "dir": "2026-09-28-vision-phase4-custom-classes--wip",
+  "title": "Vision — фаза 4: власні класи (ручка, квіти)",
   "mode": "semi",
   "depth": "normal",
   "polish": null,
   "tier": "T2",
-  "briefFile": "2026-09-27-brief.md",
+  "briefFile": "2026-09-28-brief.md",
   "memoryFile": "CLAUDE.md",
   "skillDir": "C:/Users/asaln/.claude/skills/autopilot",
-  "startedAt": "2026-09-27T17:05:17+02:00",
-  "updatedAt": "2026-09-27T21:06:38+02:00",
-  "finishedAt": "2026-09-27T21:06:38+02:00",
+  "startedAt": "2026-09-28T23:46:32+02:00",
+  "updatedAt": "2026-10-03T16:53:01+02:00",
+  "finishedAt": null,
   "stages": [
     {
       "id": "preflight",
       "status": "done",
-      "startedAt": "2026-09-27T17:05:17+02:00",
-      "finishedAt": "2026-09-27T17:05:40+02:00"
+      "startedAt": "2026-09-28T23:46:32+02:00",
+      "finishedAt": "2026-09-28T23:58:40+02:00"
     },
     {
       "id": "manifest",
       "status": "done",
-      "startedAt": "2026-09-27T17:05:40+02:00",
-      "finishedAt": "2026-09-27T17:06:58+02:00"
+      "startedAt": "2026-09-28T23:49:10+02:00",
+      "finishedAt": "2026-09-28T23:58:40+02:00"
     },
     {
       "id": "briefing",
       "status": "done",
-      "startedAt": "2026-09-27T17:06:58+02:00",
-      "finishedAt": "2026-09-27T17:27:47+02:00",
-      "note": "2 питання"
+      "startedAt": "2026-09-28T23:58:40+02:00",
+      "finishedAt": "2026-10-03T16:38:17+02:00",
+      "note": "3 питання"
     },
     {
       "id": "spec",
       "status": "done",
-      "startedAt": "2026-09-27T17:27:47+02:00",
-      "finishedAt": "2026-09-27T17:34:10+02:00"
+      "startedAt": "2026-10-03T16:38:17+02:00",
+      "finishedAt": "2026-10-03T16:41:30+02:00"
     },
     {
       "id": "plan",
       "status": "done",
-      "startedAt": "2026-09-27T17:34:10+02:00",
-      "finishedAt": "2026-09-27T17:37:23+02:00",
-      "note": "6 тасків, ярус T2"
+      "startedAt": "2026-10-03T16:41:30+02:00",
+      "finishedAt": "2026-10-03T16:44:44+02:00",
+      "note": "5 тасків, ярус T2"
     },
     {
       "id": "build",
-      "status": "done",
-      "startedAt": "2026-09-27T17:37:23+02:00",
-      "note": "6 з 6 тасків готові",
-      "finishedAt": "2026-09-27T20:59:19+02:00"
+      "status": "active",
+      "startedAt": "2026-10-03T16:44:44+02:00",
+      "note": "0 з 5 тасків готові"
     },
     {
       "id": "review",
-      "status": "done",
-      "startedAt": "2026-09-27T17:43:45+02:00",
-      "note": "перевірено 6 з 6",
-      "finishedAt": "2026-09-27T20:59:19+02:00"
+      "status": "active",
+      "startedAt": "2026-10-03T16:52:00+02:00",
+      "note": "перевіряю 01"
     },
     {
       "id": "final",
-      "status": "done",
-      "startedAt": "2026-09-27T20:59:19+02:00",
-      "finishedAt": "2026-09-27T21:06:38+02:00",
-      "note": "сліпе приймання: розбіжностей немає"
+      "status": "pending"
     }
   ],
   "requirements": {
-    "total": 38,
-    "done": 33,
-    "inTicket": 0,
+    "total": 46,
+    "done": 0,
+    "inTicket": 46,
     "inSpec": 0,
     "placeholder": 0,
-    "deferred": 4,
-    "dropped": 1
+    "deferred": 0,
+    "dropped": 0
   },
   "tickets": [
     {
       "id": "01",
-      "title": "Підготовка core/: ключ кольору, запис конфігу, класи й поріг на льоту",
+      "title": "Основа training/: конфіг, класи, кадри з відео",
       "requirements": [
-        "R08",
-        "R16i",
+        "R01",
+        "R03",
+        "R05",
+        "R06",
         "R24",
-        "R27",
-        "R33",
-        "R10.3"
+        "R25",
+        "R29",
+        "R30",
+        "R43i",
+        "G01",
+        "G03"
       ],
       "blockedBy": [],
       "wave": 1,
       "zone": [
-        "core/config.py",
-        "core/detector.py",
-        "core/tracker.py",
-        "config.yaml",
-        "tests/conftest.py"
+        "training/settings.py",
+        "training/classes.py",
+        "training/extract_frames.py",
+        "training/training.yaml"
       ],
-      "status": "done",
-      "startedAt": "2026-09-27T17:38:24+02:00",
-      "finishedAt": "2026-09-27T17:53:59+02:00",
-      "commit": "0bd4a82",
-      "tests": {
-        "passed": 207,
-        "failed": 0
-      },
+      "status": "review",
+      "startedAt": "2026-10-03T16:46:10+02:00",
       "retries": 0,
-      "repairs": 1,
-      "repairFindings": [
-        "_KEY_LINE: quoted value or value with # must parse whole; save over such a line must replace fully or refuse; classes items at any indent; low band test after set_conf"
-      ],
+      "repairs": 0,
       "handoffs": 0
     },
     {
       "id": "02",
-      "title": "Спільний конвеєр кадру: core/pipeline.py, detect.py над ним",
+      "title": "Label Studio: установка, запуск, авторозмітка",
       "requirements": [
-        "R21",
-        "R02",
-        "R32",
-        "R15i",
-        "R19i",
-        "R25",
-        "R26",
-        "R29",
-        "R33"
+        "R07",
+        "R14",
+        "R23",
+        "R31",
+        "R28"
       ],
       "blockedBy": [
         "01"
       ],
       "wave": 2,
       "zone": [
-        "core/pipeline.py",
-        "detect.py"
+        "training/label_studio.py",
+        "training/prelabel.py"
       ],
-      "status": "done",
-      "startedAt": "2026-09-27T17:46:12+02:00",
-      "finishedAt": "2026-09-27T18:02:55+02:00",
-      "commit": "effbcd8",
-      "tests": {
-        "passed": 243,
-        "failed": 0
-      },
+      "status": "in-progress",
       "retries": 0,
-      "repairs": 1,
-      "repairFindings": [
-        "OSError: only write failures map to EXIT_USAGE; photo 'wrote' line order as before; no unused draw import; tests on files, retune display/colour, resplit no mutation"
-      ],
-      "handoffs": 0
-    },
-    {
-      "id": "05",
-      "title": "Панель налаштувань і залежності Qt",
-      "requirements": [
-        "R08",
-        "R16i",
-        "R27",
-        "R28",
-        "R30",
-        "R33",
-        "R34i"
-      ],
-      "blockedBy": [
-        "01"
-      ],
-      "wave": 2,
-      "zone": [
-        "requirements.txt",
-        "ui/__init__.py",
-        "ui/settings_panel.py"
-      ],
-      "status": "done",
-      "startedAt": "2026-09-27T17:46:12+02:00",
-      "finishedAt": "2026-09-27T18:00:47+02:00",
-      "commit": "765b970",
-      "tests": {
-        "passed": 215,
-        "failed": 0
-      },
-      "retries": 0,
-      "repairs": 1,
-      "repairFindings": [
-        "model listed once however weights is spelled; OpenVINO keeps the session imgsz; tests for unknown whitelist class and no changed before editingFinished"
-      ],
-      "handoffs": 0
+      "repairs": 0,
+      "handoffs": 0,
+      "startedAt": "2026-10-03T16:53:01+02:00"
     },
     {
       "id": "03",
-      "title": "Робітник у фоновому потоці: модель, джерела, стоп, пауза, поріг",
+      "title": "Збирач датасету",
       "requirements": [
-        "R05",
-        "R06",
-        "R10",
-        "R13i",
-        "R16i",
-        "R17i",
-        "R18i",
-        "R19i",
-        "R34i",
-        "A01"
+        "R08",
+        "R12",
+        "R13",
+        "R15",
+        "R16",
+        "R18",
+        "R36",
+        "R41i",
+        "G03",
+        "R14"
       ],
       "blockedBy": [
-        "02",
-        "05"
+        "01"
       ],
-      "wave": 3,
+      "wave": 2,
       "zone": [
-        "ui/worker.py",
-        "core/pipeline.py",
-        "core/output.py",
-        "core/target.py"
+        "training/build_dataset.py"
       ],
-      "status": "done",
-      "startedAt": "2026-09-27T18:02:55+02:00",
-      "finishedAt": "2026-09-27T19:18:03+02:00",
-      "commit": "32a8e09",
-      "tests": {
-        "passed": 275,
-        "failed": 0
-      },
+      "status": "in-progress",
       "retries": 0,
-      "repairs": 1,
-      "repairFindings": [
-        "redraw must not advance the lost-lock counter; one shared split/colour/target/status/draw method; payload shares no mutable Detection; canvas-copy test able to fail; video end closes source exactly once; failure before first tick closes source + failed; no _LOAD_ERRORS alias; top-level import"
-      ],
-      "handoffs": 0
+      "repairs": 0,
+      "handoffs": 0,
+      "startedAt": "2026-10-03T16:53:01+02:00"
     },
     {
       "id": "04",
-      "title": "Головне вікно: джерела, перегляд, список об'єктів, повзунок, події",
+      "title": "Навчання на Kaggle і smoke-прогін",
       "requirements": [
-        "R04",
-        "R05",
-        "R06",
-        "R07",
         "R09",
         "R10",
-        "R12i",
-        "R14i",
-        "R15i",
-        "R17i",
-        "R18i",
-        "R23",
+        "R17",
+        "R19",
+        "R21",
+        "R22",
         "R26",
-        "A01"
+        "R39i",
+        "R40i",
+        "G02",
+        "G03"
       ],
       "blockedBy": [
-        "03"
+        "01"
       ],
-      "wave": 4,
+      "wave": 2,
       "zone": [
-        "ui/view.py",
-        "ui/main_window.py",
-        "app.py"
+        "training/kaggle_run.py",
+        "training/kaggle/"
       ],
-      "status": "done",
-      "startedAt": "2026-09-27T19:26:37+02:00",
-      "finishedAt": "2026-09-27T19:50:36+02:00",
-      "commit": "e6886aa",
-      "tests": {
-        "passed": 302,
-        "failed": 0
-      },
+      "status": "in-progress",
       "retries": 0,
-      "repairs": 2,
-      "repairFindings": [
-        "flaky stream test (UI starved by frame flood); stale payload after open_source; worker lifetime; ConfigError test; hand-computed click coords; named page step"
-      ],
-      "handoffs": 0
+      "repairs": 0,
+      "handoffs": 0,
+      "startedAt": "2026-10-03T16:53:01+02:00"
     },
     {
-      "id": "06",
-      "title": "Налаштування у вікні, Save to config.yaml, офлайн-доказ, README",
+      "id": "05",
+      "title": "Порівняння моделей і посібник",
       "requirements": [
         "R01",
-        "R03",
-        "R08",
-        "R16i",
+        "R02",
+        "R04",
+        "R11",
+        "R12",
+        "R13",
+        "R15",
+        "R16",
         "R20",
-        "R22",
-        "R23",
-        "R29",
-        "R31",
-        "R34i"
+        "R27",
+        "R32",
+        "R33",
+        "R34",
+        "R35",
+        "R36",
+        "R37",
+        "R42i",
+        "R38i",
+        "G01",
+        "G02"
       ],
       "blockedBy": [
-        "04",
-        "05"
+        "02",
+        "03",
+        "04"
       ],
-      "wave": 5,
+      "wave": 3,
       "zone": [
-        "ui/main_window.py",
-        "README.md",
-        "ui/worker.py",
-        "app.py"
+        "training/evaluate.py",
+        "training/README.md",
+        "README.md"
       ],
-      "status": "done",
-      "startedAt": "2026-09-27T19:50:36+02:00",
-      "finishedAt": "2026-09-27T20:59:19+02:00",
-      "commit": "feda87c",
-      "tests": {
-        "passed": 320,
-        "failed": 0
-      },
+      "status": "pending",
       "retries": 0,
-      "repairs": 2,
-      "repairFindings": [
-        "flaky stream test: worker must not flood the UI (at most one unpainted frame in flight); Save result visible while a stream runs; Save/reload compare the config the panel last sent; one YAML-error sentence; save tests on their own config fixture"
-      ],
+      "repairs": 0,
       "handoffs": 0
     }
   ],
   "singlePass": null,
   "tests": {
-    "passed": 320,
+    "passed": 324,
     "failed": 0
   },
   "debt": {
-    "placeholders": [],
+    "placeholders": [
+      "G02 — training.kaggle.username: логін Kaggle"
+    ],
     "assumptions": [],
     "emptyEnv": []
   },
-  "additions": [
-    "A01 → R07: пауза/продовження відеофайлу (кнопка і пробіл)"
-  ],
+  "additions": [],
   "coverage": {
-    "findings": 8,
-    "note": "4 missing: ARCH 'rewritten nothing' -> kept as proposal (core/pipeline.py), settings made a live panel without Apply, colour saved via new display.color + save writes only changed values, .exe deferred with reason; 4 half: R29 and R31 got stories, 43 acceptance, 12/40 GUI equivalents"
+    "findings": 5,
+    "note": "0 missing, 5 half: rough dataset mode (story 16 now defines build_dataset --rough), Open Images not YOLO (FiftyOne commands in the guide), ~20% now of the whole set, LS analytics made concrete, COCO slug named with verify step; additions are deepening of R/G rows, kept"
   },
-  "concernsTriage": "Phase 8, 2026-09-27: no fix-now (nothing repeats across 3+ tickets). Dropped: T01 private stub attr (test-only), T01 _check_saved and _key_of (fixed in repair 1). Reported: the other seven.",
   "concerns": [
-    "T01 tests/test_detector.py:_classes_sent_to_the_model — reads detector._model.predicted_classes (private attr of the stub)",
-    "T01 core/config.py:_check_saved — second classes validation next to _classes() (sent as optional in repair 1)",
-    "T01 tests/test_config.py:_key_of — 'everything else unchanged' compares by leaf name, not section key (fixed in repair 1)",
-    "T04 ui/main_window.py:287 — on a photo, slider steps by keyboard or wheel also rewrite out\\ files (spec named only release); say so in README",
-    "T04 ui/main_window.py:420 — closeEvent waits for the worker thread with no timeout: during the first model load or a hung camera read the window freezes until it finishes (accepted in spec)",
-    "T06 ui/main_window.py:unsaved_values — threshold compared in slider hundredths: a file value 0.505 counts as unchanged",
-    "T06 photo JSON in out\\ is not written atomically: a reader can see a half-written p0.json while the slider rewrites it (tests tolerate it; out\\ is a debugging surface)",
-    "detect.py (phase 2) — load_config lets yaml.YAMLError through, so unparsable config.yaml gives a traceback in detect.py (app.py catches it)",
-    "T02 tests/test_pipeline.py:266 — crosshair check reads a hard-coded pixel slice tied to core.draw layout",
-    "T05 ui/settings_panel.py:145 — _start_imgsz reset on every set_config, so after a revert the OpenVINO fallback is the reverted imgsz, not the session start"
+    "T01 training/extract_frames.py:52 — Source(video, None) relies on the video branch never reading cfg; a change in core.source breaks it silently",
+    "T01 training/extract_frames.py:48,93 — 'video not found' sentence built in two places",
+    "T01 training/extract_frames.py:108 — with --out outside FRAMES_ROOT the 'total' line ignores the frames just written; untested",
+    "T01 tests/test_training_frames.py:88 — Cyrillic test skips itself on a volume without 8.3 names; a skip reads as green",
+    "T01 tests/test_training_settings.py:229 — 'every key commented' check accepts a comment on the previous line belonging to another key",
+    "T01 training/training.yaml:41 — coco_dataset slug not verified yet (ticket 04 verifies)",
+    "T01 tests/test_training_boundaries.py:12 — imports helpers from tests/test_ui_boundaries.py (test-to-test coupling)"
   ],
   "reviewers": {
-    "manifestSpec": "aacfe70a184b96f99",
-    "craft": "a825cda1267572a7a"
+    "manifestSpec": "a9bcbf97b11ed7d7e",
+    "craft": "a5ba648952a6eb7a2"
   },
-  "blind": {
-    "ran": true,
-    "drift": [],
-    "notes": [
-      "camera:9 error dialog shows, app stays alive, but the view, table and status keep the previous source's picture",
-      "offscreen 1280x800 screenshot: image area narrow (~320 px) next to the table — check by eye on a real screen",
-      "ARCH §6 'Rewritten: nothing' not kept: core/ gained additions and core/pipeline.py; detect.py rewritten over it (reported as ARCH proposal)",
-      "not verified by run: live webcam, click-to-lock on a real camera, {call: on_phone} rule, photo files rewritten on slider release"
-    ]
-  }
+  "blind": null
 }

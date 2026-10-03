@@ -1,0 +1,41 @@
+# Phase 4 settings: teaching the model new classes from your own video.
+# Every key is required; training/settings.py refuses a file with one missing.
+# The runtime (detect.py, app.py) never reads this file -- only training/ does,
+# and the training script on Kaggle reads the copy shipped with the dataset.
+
+# New class names, appended after the current model's 80 names (IDs 80, 81, ...).
+classes:
+  - pen
+  - flower
+
+base_weights: models/yolo26n.pt  # starting point of the fine-tune; models/yolo26s.pt for the bigger model
+
+frames:
+  step: 20             # keep every Nth video frame (consecutive frames are near-duplicates)
+  target_total: 900    # how many frames to aim for across all videos; extract_frames reports progress
+
+dataset:
+  val_fraction: 0.2            # the last part of every video goes to validation, as one block
+  pseudo_conf: 0.5             # the current model's boxes at or above this become labels for its 80 classes
+  pseudo_iou_drop: 0.5         # a model box overlapping a hand-drawn box by this IoU or more is dropped
+  internet_fraction: 0.2       # share of the whole set taken from a ready-made dataset (--extra)
+  min_negative_fraction: 0.1   # warn when fewer frames than this have no new-class box
+  seed: 0                      # makes random picks (extra subset, COCO subset) repeatable
+
+coco:
+  train_images: 4000   # COCO train2017 images mixed in so the 80 standard classes are not forgotten
+  val_images: 500      # COCO val2017 images used to measure the standard classes before and after
+
+train:
+  epochs: 60    # full training run on Kaggle
+  imgsz: 640    # training image size; keep it equal to model.imgsz in config.yaml
+  batch: 16     # images per step on the Kaggle GPU
+
+rough:
+  epochs: 30    # the quick 2-class model that pre-labels the remaining frames
+
+kaggle:
+  username: ""                              # your Kaggle login — fill in after creating the account
+  dataset_slug: vision-training             # name of the private dataset the build is uploaded to
+  kernel_slug: vision-train                 # name of the private notebook that trains the model
+  coco_dataset: awsaf49/coco-2017-dataset   # public Kaggle dataset holding COCO 2017 images and annotations

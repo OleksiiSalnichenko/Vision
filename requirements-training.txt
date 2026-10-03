@@ -1,0 +1,6 @@
+# Phase 4 extras, installed into the same venv as requirements.txt:
+#   venv\Scripts\python -m pip install -r requirements-training.txt
+# training/kaggle_run.py runs the `kaggle` executable as a subprocess; no project
+# module imports the package. Not pinned yet: pin it (kaggle==X.Y.Z) to the
+# version the first install brings, so later installs stay identical.
+kaggle
