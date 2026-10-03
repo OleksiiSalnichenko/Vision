@@ -35,15 +35,17 @@ from core.detector import Detector, require_weights  # noqa: E402
 from core.source import IMAGE_EXTENSIONS  # noqa: E402
 from core.types import Detection, Frame  # noqa: E402
 from detect import CONFIG_PATH, EXIT_USAGE, configure_console  # noqa: E402
-from training.label_studio import IMAGE_NAME, LABEL_NAME  # noqa: E402
+# TRAINING_ROOT: Label Studio's document root for local files (`label_studio.py start`).
+from training.label_studio import IMAGE_NAME, LABEL_NAME, TRAINING_ROOT  # noqa: E402
+from training.extract_frames import FRAMES_ROOT  # noqa: E402
+from training.loading import load_model  # noqa: E402
+from training.ls_names import disk_frames, frame_name  # noqa: E402
 from training.settings import (  # noqa: E402
     TRAINING_CONFIG_PATH,
     TrainingConfigError,
     load_training,
 )
 
-# Label Studio's document root for local files (`label_studio.py start`).
-TRAINING_ROOT = PROJECT_ROOT / "data" / "training"
 LOCAL_FILES_URL = "/data/local-files/?d="
 TASKS_NAME = "tasks.json"
 
@@ -104,9 +106,13 @@ def labelled_stems(export: Path) -> set[str]:
     return {path.stem for path in paths if path.suffix == ".txt" and "labels" in path.parts}
 
 
-def _is_labelled(stem: str, labelled: set[str]) -> bool:
-    # Label Studio may prefix an exported file name with an id ("<id>-name", "<id>__name").
-    return any(label == stem or label.endswith(("-" + stem, "__" + stem)) for label in labelled)
+def labelled_frames(labelled: set[str], frames: set[str]) -> set[str]:
+    """The frames on disk (`frames`, by name) that the exported label stems stand for.
+
+    Only the exported names go through `frame_name`; a frame on disk carries no
+    Label Studio prefix and is compared as it is.
+    """
+    return {frame_name(label, frames) for label in labelled} & frames
 
 
 def _read(path: Path) -> np.ndarray:
@@ -157,15 +163,19 @@ def main(argv: list[str] | None = None) -> int:
         if not export.exists():
             print(f"export not found: {export}", file=sys.stderr)
             return EXIT_USAGE
-        labelled = labelled_stems(export)
-        frames = [path for path in frames if not _is_labelled(path.stem, labelled)]
+        # Checked against every extracted frame, not only those in --frames (a label of
+        # another video must not be read as one of these), and never against
+        # exports/ or build/, whose images carry Label Studio's prefixed names.
+        known = disk_frames(FRAMES_ROOT) | {path.stem for path in frames}
+        done = labelled_frames(labelled_stems(export), known)
+        frames = [path for path in frames if path.stem not in done]
     if not frames:
         print(f"no frames to pre-annotate in {frames_dir}", file=sys.stderr)
         return EXIT_USAGE
 
     try:
         require_weights(cfg)
-        detector = Detector(cfg)
+        detector = load_model(lambda: Detector(cfg), cfg.model.weights)
         sizes: dict[Path, tuple[int, int]] = {}
         found: dict[Path, list[Detection]] = {}
         for index, path in enumerate(frames):

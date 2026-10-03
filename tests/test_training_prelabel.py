@@ -91,6 +91,7 @@ def setup(tmp_path, monkeypatch, write_config):
     training.write_text(training_text({"classes": ["pen", "flower"]}), encoding="utf-8")
 
     monkeypatch.setattr(prelabel, "TRAINING_ROOT", root)
+    monkeypatch.setattr(prelabel, "FRAMES_ROOT", root / "frames")
     monkeypatch.setattr(prelabel, "TRAINING_CONFIG_PATH", training)
     monkeypatch.setattr(prelabel, "CONFIG_PATH", write_config({"classes": ["person"]}))
     monkeypatch.setattr(prelabel, "Detector", StubDetector)
@@ -138,6 +139,59 @@ def test_frames_with_a_label_file_in_the_export_are_skipped(setup):
     assert [task["data"]["image"].rsplit("/", 1)[1] for task in tasks] == ["desk_000040.jpg"]
 
 
+def test_label_studio_prefixes_are_read_by_the_one_frame_name_rule(setup):
+    export = setup["tmp"] / "export"
+    (export / "labels").mkdir(parents=True)
+    # A frame of a video called big-desk is not desk_000020; a task-id prefix is.
+    (export / "labels" / "big-desk_000020.txt").write_text("", encoding="utf-8")
+    (export / "labels" / "17__desk_000040.txt").write_text("", encoding="utf-8")
+    out = setup["tmp"] / "rest.json"
+
+    assert _run(setup, "--skip-labelled", str(export), "--out", str(out)) == 0
+
+    tasks = json.loads(out.read_text(encoding="utf-8"))
+    assert [task["data"]["image"].rsplit("/", 1)[1] for task in tasks] == [
+        "desk_000000.jpg", "desk_000020.jpg"]
+
+
+def test_a_dated_video_and_its_namesake_never_mark_each_other_labelled(setup):
+    dated = setup["root"] / "frames" / "2024-desk"
+    dated.mkdir()
+    for index in (0, 20, 40):
+        ok, data = cv2.imencode(".jpg", np.zeros((50, 80, 3), np.uint8))
+        (dated / f"2024-desk_{index:06d}.jpg").write_bytes(data.tobytes())
+    export = setup["tmp"] / "export"
+    (export / "labels").mkdir(parents=True)
+    (export / "labels" / "2024-desk_000020.txt").write_text("", encoding="utf-8")
+    (export / "labels" / "desk_000040.txt").write_text("", encoding="utf-8")
+    out = setup["tmp"] / "rest.json"
+
+    assert prelabel.main(["--weights", str(setup["weights"]),
+                          "--frames", str(setup["root"] / "frames"),
+                          "--skip-labelled", str(export), "--out", str(out)]) == 0
+
+    tasks = json.loads(out.read_text(encoding="utf-8"))
+    assert sorted(task["data"]["image"].rsplit("/", 1)[1] for task in tasks) == [
+        "2024-desk_000000.jpg", "2024-desk_000040.jpg", "desk_000000.jpg", "desk_000020.jpg"]
+
+
+def test_an_export_unpacked_under_data_training_still_skips_its_frames(setup):
+    # The export's own images carry Label Studio's prefix; they are not frames.
+    export = setup["root"] / "exports" / "first50"
+    (export / "images").mkdir(parents=True)
+    (export / "labels").mkdir(parents=True)
+    ok, data = cv2.imencode(".jpg", np.zeros((50, 80, 3), np.uint8))
+    (export / "images" / "17__desk_000020.jpg").write_bytes(data.tobytes())
+    (export / "labels" / "17__desk_000020.txt").write_text("", encoding="utf-8")
+    out = setup["tmp"] / "rest.json"
+
+    assert _run(setup, "--skip-labelled", str(export), "--out", str(out)) == 0
+
+    tasks = json.loads(out.read_text(encoding="utf-8"))
+    assert [task["data"]["image"].rsplit("/", 1)[1] for task in tasks] == [
+        "desk_000000.jpg", "desk_000040.jpg"]
+
+
 def test_the_export_may_be_a_zip(setup):
     export = setup["tmp"] / "export.zip"
     with zipfile.ZipFile(export, "w") as archive:
@@ -176,6 +230,17 @@ def test_missing_weights_are_one_sentence(setup, capsys):
     assert _run(setup) == 2
     assert _one_sentence(capsys.readouterr().err)
     assert StubDetector.made == []
+
+
+def test_a_model_that_will_not_load_is_one_sentence(setup, monkeypatch, capsys):
+    class Broken:
+        def __init__(self, cfg) -> None:
+            raise RuntimeError("PytorchStreamReader failed\nreading zip archive")
+
+    monkeypatch.setattr(prelabel, "Detector", Broken)
+    assert _run(setup) == 2
+    err = capsys.readouterr().err
+    assert str(setup["weights"]) in err and "PytorchStreamReader" in err and _one_sentence(err)
 
 
 def test_a_missing_export_is_one_sentence(setup, capsys):

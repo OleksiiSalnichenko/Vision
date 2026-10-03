@@ -14,6 +14,7 @@ import json
 import os
 import subprocess
 import sys
+import types
 
 import cv2
 import numpy as np
@@ -70,7 +71,8 @@ def test_the_table_scores_all_over_the_classes_every_model_knows():
 
     text = evaluate.table(["rough.pt", "full.pt"], [rough, full], [0.05, 0.0625], ["pen", "flower"])
 
-    rows = {line[:24].strip(): line[24:].split() for line in text.splitlines()[1:]}
+    # Read from the right: the last two columns are the models, the rest is the row label.
+    rows = {line.rsplit(None, 2)[0]: line.split()[-2:] for line in text.splitlines()[1:]}
     assert text.splitlines()[0].split() == ["rough.pt", "full.pt"]
     assert rows["pen mAP50"] == ["0.500", "0.750"]
     assert rows["pen mAP50-95"] == ["0.250", "0.500"]
@@ -104,6 +106,117 @@ def test_missing_weights_are_one_sentence_before_any_model_loads(setup, capsys):
 
     assert evaluate.main(["--weights", str(setup / "gone.pt"), "--build", "first"]) == 2
     assert capsys.readouterr().err == f"weights not found: {setup / 'gone.pt'}\n"
+
+
+class FakeYOLO:
+    """Stands in for `ultralytics.YOLO`: knows `names`, records every model made."""
+
+    names: dict[int, str] = {}
+    made: list = []
+
+    def __init__(self, weights) -> None:
+        FakeYOLO.made.append(weights)
+        self.names = dict(FakeYOLO.names)
+
+    def val(self, **kwargs):
+        raise AssertionError("no test here gets as far as a val")
+
+
+@pytest.fixture
+def fake_yolo(setup, monkeypatch):
+    """`main` with `ultralytics` replaced by `FakeYOLO`; returns a weights file that exists."""
+    module = types.ModuleType("ultralytics")
+    module.YOLO = FakeYOLO
+    monkeypatch.setitem(sys.modules, "ultralytics", module)
+    monkeypatch.setattr(evaluate, "no_font_download", lambda: None)
+    monkeypatch.setattr(FakeYOLO, "names", {0: "pen", 1: "flower"})
+    monkeypatch.setattr(FakeYOLO, "made", [])
+    weights = setup / "model.pt"
+    weights.write_bytes(b"stub")
+    return weights
+
+
+@pytest.mark.parametrize("bad", ["5 0.5 0.5 0.2 0.2", "0 x 0.5 0.2 0.2", "0 0.5 0.5"])
+def test_a_broken_label_line_is_one_sentence_with_file_and_line(setup, fake_yolo, capsys, bad):
+    build = setup / "builds" / "first"
+    _write_build(build, ["pen", "flower"], {"a": f"0 0.5 0.5 0.2 0.2\n{bad}\n"})
+
+    assert evaluate.main(["--weights", str(fake_yolo), "--build", "first", "--imgsz", "64"]) == 2
+
+    err = capsys.readouterr().err
+    assert f"{build / 'labels' / 'val' / 'a.txt'}:2" in err
+    assert err.count("\n") == 1 and "Traceback" not in err
+
+
+def test_a_model_that_knows_none_of_the_build_classes_is_one_sentence(setup, fake_yolo, capsys,
+                                                                      monkeypatch):
+    monkeypatch.setattr(FakeYOLO, "names", {0: "car", 1: "bus"})
+    _write_build(setup / "builds" / "first", ["pen", "flower"], {"a": "0 0.5 0.5 0.2 0.2\n"})
+
+    assert evaluate.main(["--weights", str(fake_yolo), "--build", "first", "--imgsz", "64"]) == 2
+
+    err = capsys.readouterr().err
+    assert "knows none of the classes" in err and err.count("\n") == 1
+
+
+def test_an_openvino_folder_at_another_size_is_one_sentence(setup, fake_yolo, capsys):
+    _write_build(setup / "builds" / "first", ["pen", "flower"], {"a": "0 0.5 0.5 0.2 0.2\n"})
+    folder = setup / "pen_openvino_model"
+    folder.mkdir()
+    (folder / "model.xml").write_text("<net/>", encoding="utf-8")
+    (folder / "metadata.yaml").write_text(yaml.safe_dump({"imgsz": [320, 320]}),
+                                          encoding="utf-8")
+
+    assert evaluate.main(["--weights", str(folder), "--build", "first", "--imgsz", "64"]) == 2
+
+    err = capsys.readouterr().err
+    assert str(folder) in err and "320" in err and err.count("\n") == 1
+    assert FakeYOLO.made == []  # refused before any model loads
+
+
+def test_an_openvino_folder_exported_non_square_is_one_sentence(setup, fake_yolo, capsys):
+    _write_build(setup / "builds" / "first", ["pen", "flower"], {"a": "0 0.5 0.5 0.2 0.2\n"})
+    folder = setup / "pen_openvino_model"
+    folder.mkdir()
+    (folder / "metadata.yaml").write_text(yaml.safe_dump({"imgsz": [480, 640]}),
+                                          encoding="utf-8")
+
+    # 640 is the larger side: a max() of the two would let it through.
+    assert evaluate.main(["--weights", str(folder), "--build", "first", "--imgsz", "640"]) == 2
+
+    err = capsys.readouterr().err
+    assert str(folder) in err and "480x640" in err and err.count("\n") == 1
+    assert FakeYOLO.made == []
+
+
+def _broken(*args, **kwargs):
+    raise RuntimeError("PytorchStreamReader failed\nreading zip archive")
+
+
+def test_weights_that_will_not_load_are_one_sentence(setup, fake_yolo, capsys, monkeypatch):
+    monkeypatch.setattr(sys.modules["ultralytics"], "YOLO", _broken)
+    _write_build(setup / "builds" / "first", ["pen", "flower"], {"a": "0 0.5 0.5 0.2 0.2\n"})
+
+    assert evaluate.main(["--weights", str(fake_yolo), "--build", "first", "--imgsz", "64"]) == 2
+
+    err = capsys.readouterr().err
+    assert str(fake_yolo) in err and "PytorchStreamReader" in err
+    assert err.count("\n") == 1 and "Traceback" not in err
+
+
+def test_a_detector_that_will_not_load_is_one_sentence(setup, fake_yolo, capsys, monkeypatch,
+                                                       write_config):
+    box = types.SimpleNamespace(ap_class_index=[0], ap50=[0.5], ap=[0.25])
+    monkeypatch.setattr(FakeYOLO, "val", lambda self, **kwargs: types.SimpleNamespace(box=box))
+    monkeypatch.setattr(evaluate, "Detector", _broken)
+    monkeypatch.setattr(evaluate, "CONFIG_PATH", write_config())
+    _write_build(setup / "builds" / "first", ["pen", "flower"], {"a": "0 0.5 0.5 0.2 0.2\n"})
+
+    assert evaluate.main(["--weights", str(fake_yolo), "--build", "first", "--imgsz", "64"]) == 2
+
+    err = capsys.readouterr().err
+    assert str(fake_yolo) in err and "PytorchStreamReader" in err
+    assert err.count("\n") == 1 and "Traceback" not in err
 
 
 CHILD = r"""

@@ -20,7 +20,7 @@ from conftest import config_text
 from core.geometry import offsets
 from core.types import Detection
 from test_training_settings import training_text
-from training import build_dataset
+from training import build_dataset, ls_names
 
 WIDTH, HEIGHT = 100, 50
 CUSTOM = ["stapler", "mug"]  # training.classes in every test config below
@@ -33,6 +33,12 @@ def _jpeg(path: Path) -> Path:
     return path
 
 
+def _frames(folder: Path, stems: list[str]) -> None:
+    """Frames on disk, as extract_frames leaves them under data/training/frames/<video>/."""
+    for stem in stems:
+        _jpeg(folder / f"{stem}.jpg")
+
+
 def make_export(root: Path, labels: dict[str, str | None],
                 classes: list[str] | tuple[str, ...] = CUSTOM) -> Path:
     """A Label Studio YOLO export: `labels` maps an image stem to its .txt (None = no file)."""
@@ -41,7 +47,9 @@ def make_export(root: Path, labels: dict[str, str | None],
     for stem, text in labels.items():
         _jpeg(root / "images" / f"{stem}.jpg")
         if text is not None:
-            (root / "labels" / f"{stem}.txt").write_text(text, encoding="utf-8")
+            label = root / "labels" / f"{stem}.txt"
+            label.parent.mkdir(parents=True, exist_ok=True)
+            label.write_text(text, encoding="utf-8")
     return root
 
 
@@ -85,6 +93,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(build_dataset, "TRAINING_CONFIG_PATH", training)
     monkeypatch.setattr(build_dataset, "CONFIG_PATH", config)
     monkeypatch.setattr(build_dataset, "BUILD_ROOT", tmp_path / "build")
+    monkeypatch.setattr(build_dataset, "FRAMES_ROOT", tmp_path / "frames")
     monkeypatch.setattr(build_dataset, "Detector", StubDetector)
     monkeypatch.setattr(StubDetector, "made", [])
     monkeypatch.setattr(StubDetector, "by_stem", {})
@@ -180,6 +189,38 @@ def test_split_puts_the_last_block_of_every_video_into_val():
     assert any(item.image.stem == "room_000000" for item in train)
     again = build_dataset.split(list(reversed(items)), 0.25, seed=7)
     assert sorted(i.image.stem for i in again[1]) == val_names
+
+@pytest.mark.parametrize("ls_stem, frame", [
+    ("8f3a2b1c-desk_000020", "desk_000020"),   # an uploaded file
+    ("17-desk_000020", "desk_000020"),         # task id, dash
+    ("17__desk_000020", "desk_000020"),        # task id, double underscore
+    ("desk_000020", "desk_000020"),            # no prefix
+    ("big-pen_000020", "big-pen_000020"),      # a video named big-pen, not a prefix
+    ("photo", "photo"),                        # not a frame name at all
+])
+def test_frame_name_strips_only_a_label_studio_prefix(ls_stem, frame):
+    assert ls_names.frame_name(ls_stem) == frame
+
+
+@pytest.mark.parametrize("ls_stem, on_disk, frame", [
+    # An exact frame on disk wins over a prefix that is really a date.
+    ("20261003-desk_000020", {"20261003-desk_000020", "desk_000020"}, "20261003-desk_000020"),
+    ("17-desk_000020", {"desk_000020"}, "desk_000020"),
+    ("17__desk_000020", {"desk_000020"}, "desk_000020"),
+    # Without the prefix it is no frame on disk either: the name stays whole.
+    ("20261003-desk_000020", {"20261004-desk_000020"}, "20261003-desk_000020"),
+])
+def test_frame_name_checks_against_the_frames_on_disk(ls_stem, on_disk, frame):
+    assert ls_names.frame_name(ls_stem, on_disk) == frame
+
+
+def test_split_groups_every_label_studio_prefix_with_its_video():
+    items = [_item("desk_000000"), _item("desk_000020"), _item("8f3a2b1c-desk_000040"),
+             _item("17__desk_000060")]
+
+    train, val = build_dataset.split(items, 0.25, seed=7)
+
+    assert [item.image.stem for item in val] == ["17__desk_000060"]  # one video, one block
 
 # --- extra dataset ------------------------------------------------------------
 
@@ -335,6 +376,99 @@ def test_an_existing_build_is_refused_without_force_and_emptied_with_it(env, cap
     assert build_dataset.main(["--export", str(export), "--name", "first", "--force"]) == 0
     assert not (old / "stale.txt").exists()
     assert (old / "manifest.json").is_file()
+
+
+@pytest.mark.parametrize("name", ["", ".", "..", "a/b", "a\\b", "C:\\elsewhere", "/abs"])
+def test_a_name_that_is_not_one_folder_is_refused_before_anything(env, capsys, name):
+    export = desk_export(env / "ls")
+    neighbour = env / "build" / "keep"
+    neighbour.mkdir(parents=True)
+    (neighbour / "data.txt").write_text("mine", encoding="utf-8")
+
+    assert build_dataset.main(["--export", str(export), "--name", name, "--force"]) == 2
+
+    err = capsys.readouterr().err
+    assert "--name" in err and one_sentence(err)
+    assert (neighbour / "data.txt").read_text(encoding="utf-8") == "mine"
+    assert sorted(p.name for p in env.iterdir()) == sorted(
+        ["base.pt", "model.pt", "training.yaml", "config.yaml", "ls", "build"])
+    assert StubDetector.made == []
+
+
+@pytest.mark.parametrize("first, second", [
+    ("a/desk_000000", "b/desk_000000"),     # one stem in two folders
+    ("17-desk_000000", "18__desk_000000"),  # one frame imported into two tasks
+])
+def test_one_frame_twice_is_refused_naming_both_before_anything_is_removed(
+        env, capsys, first, second):
+    _frames(env / "frames" / "desk", ["desk_000000", "desk_000020"])
+    export = make_export(env / "ls", {first: "0 0.5 0.5 0.1 0.1\n",
+                                      second: "1 0.5 0.5 0.1 0.1\n",
+                                      "desk_000020": ""})
+    old = env / "build" / "dup"
+    old.mkdir(parents=True)
+    (old / "keep.txt").write_text("old", encoding="utf-8")
+
+    assert build_dataset.main(["--export", str(export), "--name", "dup", "--force"]) == 2
+
+    err = capsys.readouterr().err
+    assert str(export / "images" / f"{first}.jpg") in err
+    assert str(export / "images" / f"{second}.jpg") in err and one_sentence(err)
+    assert (old / "keep.txt").read_text(encoding="utf-8") == "old"
+    assert StubDetector.made == []  # refused before the model loads
+
+
+def test_dated_clips_stay_two_videos_when_their_frames_are_on_disk(env):
+    first = [f"20261003-desk_{index:06d}" for index in (0, 20, 40, 60)]
+    second = [f"20261004-desk_{index:06d}" for index in (100, 120, 140, 160)]
+    _frames(env / "frames" / "20261003-desk", first)
+    _frames(env / "frames" / "20261004-desk", second)
+    export = make_export(env / "ls", {stem: "0 0.5 0.5 0.1 0.1\n" for stem in first + second})
+
+    assert build_dataset.main(["--export", str(export), "--name", "d", "--rough"]) == 0
+
+    # Two videos, the last quarter of each in val. Read as one video "desk" the
+    # last two of eight would be 140 and 160, both of the second clip.
+    val = sorted(p.stem for p in (env / "build" / "d" / "images" / "val").iterdir())
+    assert val == ["20261003-desk_000060", "20261004-desk_000160"]
+
+
+def test_a_model_that_will_not_load_is_one_sentence(env, monkeypatch, capsys):
+    class Broken:
+        def __init__(self, cfg) -> None:
+            raise RuntimeError("PytorchStreamReader failed\nreading zip archive")
+
+    monkeypatch.setattr(build_dataset, "Detector", Broken)
+    export = desk_export(env / "ls")
+
+    assert build_dataset.main(["--export", str(export), "--name", "first"]) == 2
+
+    err = capsys.readouterr().err
+    assert str(env / "model.pt") in err and "PytorchStreamReader" in err and one_sentence(err)
+    assert not (env / "build").exists()
+
+
+def test_a_dated_name_with_no_frames_on_disk_is_warned_about(env, capsys):
+    export = make_export(env / "ls", {"20261003-desk_000000": "0 0.5 0.5 0.1 0.1\n",
+                                      "20261004-desk_000020": ""})
+
+    assert build_dataset.main(["--export", str(export), "--name", "r", "--rough"]) == 0
+
+    err = capsys.readouterr().err
+    assert "warning" in err and "20261003-desk_000000" in err and str(env / "frames") in err
+
+
+def test_box_ids_follow_the_export_classes_txt_not_training_classes(env):
+    # classes.txt lists mug first; training.classes lists stapler first. ID 0 here is a mug.
+    export = make_export(env / "ls", {"desk_000000": "0 0.5 0.5 0.2 0.4\n",
+                                      "desk_000020": "1 0.2 0.2 0.1 0.1\n"},
+                         classes=["mug", "stapler"])
+
+    assert build_dataset.main(["--export", str(export), "--name", "r", "--rough"]) == 0
+
+    out = env / "build" / "r"
+    assert _lines(out / "labels" / "train" / "desk_000000.txt") == [(1, 0.5, 0.5, 0.2, 0.4)]  # mug
+    assert _lines(out / "labels" / "train" / "desk_000020.txt") == [(0, 0.2, 0.2, 0.1, 0.1)]
 
 
 @pytest.mark.parametrize("labels, classes, word", [

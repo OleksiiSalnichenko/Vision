@@ -41,6 +41,7 @@ from core.source import IMAGE_EXTENSIONS  # noqa: E402
 from core.types import Frame  # noqa: E402
 from detect import CONFIG_PATH, EXIT_USAGE, configure_console  # noqa: E402
 from training.kaggle.train import no_font_download  # noqa: E402
+from training.loading import load_model  # noqa: E402
 from training.settings import TRAINING_CONFIG_PATH, load_training  # noqa: E402
 
 BUILD_ROOT = PROJECT_ROOT / "data" / "training" / "build"
@@ -66,10 +67,14 @@ def val_set(build: str | Path, model_names: dict[int, str], work: str | Path) ->
         shutil.copyfile(image, images_dir / image.name)
         label = build / "labels" / VAL / f"{image.stem}.txt"
         lines = []
-        for line in (label.read_text(encoding="utf-8").splitlines() if label.is_file() else []):
+        text = label.read_text(encoding="utf-8") if label.is_file() else ""
+        for number, line in enumerate(text.splitlines(), 1):
             fields = line.split()
-            if fields and build_names[int(fields[0])] in model_ids:
-                lines.append(" ".join([str(model_ids[build_names[int(fields[0])]]), *fields[1:]]))
+            if not fields:
+                continue
+            name = _box_class(fields, build_names, f"{label}:{number}")
+            if name in model_ids:
+                lines.append(" ".join([str(model_ids[name]), *fields[1:]]))
         (labels_dir / f"{image.stem}.txt").write_text(
             "".join(f"{line}\n" for line in lines), encoding="utf-8")
     data = work / "data.yaml"
@@ -78,6 +83,36 @@ def val_set(build: str | Path, model_names: dict[int, str], work: str | Path) ->
         "names": dict(model_names),
     }, sort_keys=False, allow_unicode=True), encoding="utf-8")
     return data
+
+
+def _box_class(fields: list[str], names: list[str], where: str) -> str:
+    """The class name of one YOLO box line, or a `ValueError` naming `file:line`."""
+    try:
+        cls_id = int(fields[0])
+        for value in fields[1:]:
+            float(value)
+    except ValueError:
+        cls_id = -1
+    if len(fields) != 5 or not 0 <= cls_id < len(names):
+        raise ValueError(f"not a YOLO box line of this build: {where}")
+    return names[cls_id]
+
+
+def export_size(weights: str | Path) -> int | None:
+    """The fixed `imgsz` an OpenVINO folder was exported at; None for a `.pt` or no metadata."""
+    metadata = Path(weights) / "metadata.yaml"
+    if not metadata.is_file():
+        return None
+    size = (yaml.safe_load(metadata.read_text(encoding="utf-8")) or {}).get("imgsz")
+    if not size:
+        return None
+    if not isinstance(size, list):
+        return int(size)
+    if len(set(size)) != 1:  # one --imgsz is one square: no size of it matches this export
+        raise ValueError(f"{weights} was exported at a non-square size "
+                         f"{'x'.join(str(side) for side in size)}; evaluate measures square "
+                         f"sizes only, export it again at one size")
+    return int(size[0])
 
 
 def _names(data_yaml: Path) -> list[str]:
@@ -101,7 +136,7 @@ def score(weights: str, build: Path, imgsz: int, work: Path) -> dict[str, tuple[
     from ultralytics import YOLO  # noqa: PLC0415 -- deliberately lazy
 
     no_font_download()
-    model = YOLO(weights)
+    model = load_model(lambda: YOLO(weights), weights)
     names = dict(model.names)
     if not set(names.values()) & set(_names(build / "data.yaml")):
         raise ValueError(f"{weights} knows none of the classes of the build {build.name}")
@@ -117,7 +152,7 @@ def seconds_per_frame(weights: str, images: list[Path], imgsz: int) -> float:
     """Mean `Detector` time per frame: `bench.warmup` frames discarded, `bench.runs` timed."""
     cfg = load_config(CONFIG_PATH)
     cfg = replace(cfg, classes=[], model=replace(cfg.model, weights=weights, imgsz=imgsz))
-    detector = Detector(cfg)
+    detector = load_model(lambda: Detector(cfg), weights)
     frames = [Frame(cv2.imdecode(np.fromfile(path, dtype=np.uint8), cv2.IMREAD_COLOR),
                     str(path), index) for index, path in enumerate(images)]
     for index in range(cfg.bench.warmup):
@@ -175,6 +210,10 @@ def main(argv: list[str] | None = None) -> int:
         for weights in args.weights:
             if not Path(weights).exists():
                 raise FileNotFoundError(f"weights not found: {weights}")
+            exported = export_size(weights)
+            if exported is not None and exported != imgsz:
+                raise ValueError(f"{weights} was exported at imgsz {exported}, not {imgsz}; "
+                                 f"pass --imgsz {exported} or export it again")
         scores, speeds = [], []
         for weights in args.weights:
             with tempfile.TemporaryDirectory(prefix="vision-eval-") as work:

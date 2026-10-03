@@ -185,7 +185,9 @@ Print the labeling interface for `training.classes`:
 venv\Scripts\python training\label_studio.py config
 ```
 
-In the browser:
+In the browser (the clicks below -- local-files storage here and deleting the
+empty tasks in section 5 -- are written from Label Studio's documentation and
+get checked against the first real project):
 
 1. Sign up (a local account, stored on this machine), *Create Project*.
 2. *Labeling Setup*, *Custom template*, *Code*: paste what `config` printed; Save.
@@ -232,6 +234,11 @@ it draw the boxes on the rest; you only correct them.
 6. Export everything (step 4.5) as `data\training\exports\all.zip`.
 
 ## 6. Build the dataset
+
+Keep the frames in `data\training\frames` while you build: Label Studio may put a
+prefix such as `17-` in front of a frame's name, and the build tells a prefix from
+a clip named like `20261003-desk` by looking at the frames on disk. Without them
+it goes by the name alone and may read a dated clip name as a prefix.
 
 *Why:* one folder that holds everything the training needs, checked before it
 is uploaded.

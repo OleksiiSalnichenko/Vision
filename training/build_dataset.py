@@ -34,6 +34,7 @@ import shutil
 import sys
 import tempfile
 import zipfile
+from collections.abc import Collection
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -52,6 +53,9 @@ from core.source import IMAGE_EXTENSIONS  # noqa: E402
 from core.types import Frame  # noqa: E402
 from detect import CONFIG_PATH, EXIT_USAGE, configure_console  # noqa: E402
 from training.classes import class_names  # noqa: E402
+from training.extract_frames import FRAMES_ROOT  # noqa: E402
+from training.loading import load_model  # noqa: E402
+from training.ls_names import disk_frames, frame_name, maybe_dated  # noqa: E402
 from training.settings import TRAINING_CONFIG_PATH, load_training  # noqa: E402
 
 BUILD_ROOT = PROJECT_ROOT / "data" / "training" / "build"
@@ -72,24 +76,27 @@ class Item:
     extra: bool = False  # from the ready-made dataset (--extra), not the user's video
 
 
-# `<video stem>_<frame index>`, as extract_frames names a frame; Label Studio
-# puts an 8-hex-digit prefix with a dash in front of an uploaded file's name.
-_FRAME_NAME = re.compile(r"^(?:[0-9a-f]{8}-)?(?P<video>.+)_(?P<index>\d+)$")
+# `<video stem>_<frame index>`, as extract_frames names a frame (after
+# `ls_names.frame_name` has taken off Label Studio's prefix).
+_FRAME_NAME = re.compile(r"^(?P<video>.+)_(?P<index>\d+)$")
 
 
-def split(items: list[Item], val_fraction: float, seed: int) -> tuple[list[Item], list[Item]]:
+def split(items: list[Item], val_fraction: float, seed: int,
+          frames: Collection[str] = ()) -> tuple[list[Item], list[Item]]:
     """Return (train, val) with no frame of one video block leaking into the other.
 
     Own frames: per video, the last `val_fraction` of its frames by index go to
-    val as one block (a video of one frame stays in train). Extra images: the
-    same share, picked at random with `seed`. Deterministic for the same input.
+    val as one block (a video of one frame stays in train). The video is read
+    from the exported name through `ls_names.frame_name`, checked against
+    `frames`, the names of the frames on disk. Extra images: the same share,
+    picked at random with `seed`. Deterministic for the same input.
     """
     videos: dict[str, list[tuple[int, Item]]] = {}
     for item in items:
         if not item.extra:
-            match = _FRAME_NAME.match(item.image.stem)
-            video, index = (match["video"], int(match["index"])) if match else (
-                item.image.stem, 0)
+            name = frame_name(item.image.stem, frames)
+            match = _FRAME_NAME.match(name)
+            video, index = (match["video"], int(match["index"])) if match else (name, 0)
             videos.setdefault(video, []).append((index, item))
     train, val = [], []
     for video in sorted(videos):
@@ -356,11 +363,33 @@ def main(argv: list[str] | None = None) -> int:
     configure_console()
     args = parse_args(argv)
     try:
+        _check_name(args.name)  # before anything is read, written or removed
         with tempfile.TemporaryDirectory(prefix="vision-build-") as scratch:
             return _build(args, Path(scratch))
     except (OSError, ValueError) as error:  # config, export, weights, folder: one sentence
         print(error, file=sys.stderr)
         return EXIT_USAGE
+
+
+def _check_name(name: str) -> None:
+    """`--name` must be one plain folder: `..` or a path would point the rebuild elsewhere."""
+    if name in ("", ".", "..") or Path(name).name != name or "/" in name or "\\" in name:
+        raise ValueError(f"--name must be one plain folder name under {BUILD_ROOT}, "
+                         f"not {name!r}")
+
+
+def _one_each(items: list[Item], frames: Collection[str]) -> None:
+    """Refuse one frame exported twice (two folders, or two tasks: `17-x_000020`, `18__x_000020`).
+
+    Checked before the model loads and before anything is written or removed.
+    """
+    seen: dict[str, Path] = {}
+    for item in items:
+        name = frame_name(item.image.stem, frames)
+        if name in seen:
+            raise ValueError(f"the export holds frame {name} twice: {seen[name]} and "
+                             f"{item.image}; delete one of the two tasks in Label Studio")
+        seen[name] = item.image
 
 
 def _build(args: argparse.Namespace, scratch: Path) -> int:
@@ -382,6 +411,14 @@ def _build(args: argparse.Namespace, scratch: Path) -> int:
     skipped = len(items) - len(own)
     if skipped:
         print(f"skipped {skipped} image{'s' if skipped != 1 else ''} with no label file")
+    frames = disk_frames(FRAMES_ROOT)
+    dated = [item.image.stem for item in own if maybe_dated(item.image.stem)]
+    if not frames and dated:
+        print(f"warning: no frames in {FRAMES_ROOT} to check names against, so "
+              f"{dated[0]} is read as frame {frame_name(dated[0])} of video "
+              f"{frame_name(dated[0]).rsplit('_', 1)[0]}; clips named with a date "
+              f"in front may merge into one", file=sys.stderr)
+    _one_each(own, frames)
     if not any(label[0] in custom for item in own for label in item.labels):
         raise ValueError(f"the export has no {' or '.join(custom)} box at all; "
                          f"label some frames in Label Studio first")
@@ -394,7 +431,7 @@ def _build(args: argparse.Namespace, scratch: Path) -> int:
         runtime = replace(runtime, classes=[],
                           model=replace(runtime.model, conf=conf, conf_debug=conf))
         require_weights(runtime)
-        detector = Detector(runtime)
+        detector = load_model(lambda: Detector(runtime), runtime.model.weights)
         names = class_names(detector.names, custom)
         own = pseudo_labels(own, detector, custom, conf, cfg.dataset.pseudo_iou_drop)
 
@@ -408,7 +445,7 @@ def _build(args: argparse.Namespace, scratch: Path) -> int:
                   f"{' or '.join(custom)}; all are used, below "
                   f"dataset.internet_fraction ({fraction:.0%})", file=sys.stderr)
 
-    train, val = split(own + extras, cfg.dataset.val_fraction, cfg.dataset.seed)
+    train, val = split(own + extras, cfg.dataset.val_fraction, cfg.dataset.seed, frames)
     out = write_build(out_dir, train, val, names, custom, "rough" if args.rough else "full",
                       TRAINING_CONFIG_PATH, weights, force=args.force)
     _print_summary(out, custom, cfg.dataset.min_negative_fraction)

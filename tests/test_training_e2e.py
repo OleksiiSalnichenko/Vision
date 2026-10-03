@@ -60,7 +60,7 @@ project, root, base = sys.argv[1:4]
 root = Path(root)
 sys.path.insert(0, project)
 
-from training import build_dataset, evaluate, extract_frames
+from training import build_dataset, evaluate, extract_frames, prelabel
 
 codes = {}
 training = root / "training.yaml"
@@ -82,6 +82,7 @@ for frame in frames:
     (export / "labels" / f"{frame.stem}.txt").write_text(boxes[frame.stem], encoding="utf-8")
 
 build_dataset.BUILD_ROOT = root / "build"
+build_dataset.FRAMES_ROOT = root / "frames"
 build_dataset.TRAINING_CONFIG_PATH = training
 build_dataset.CONFIG_PATH = config
 codes["build_dataset"] = build_dataset.main(["--export", str(export), "--name", "e2e"])
@@ -93,6 +94,16 @@ try:
     codes["train"] = 0
 except SystemExit as done:
     codes["train"] = done.code or 0
+
+# Pre-annotating the frames with the freshly trained model, as the user does before
+# drawing the rest in Label Studio.
+prelabel.TRAINING_ROOT = root
+prelabel.FRAMES_ROOT = root / "frames"
+prelabel.TRAINING_CONFIG_PATH = training
+prelabel.CONFIG_PATH = config
+codes["prelabel"] = prelabel.main(["--weights", str(root / "out" / "best.pt"),
+                                   "--frames", str(root / "frames" / "desk"),
+                                   "--out", str(root / "tasks.json")])
 
 evaluate.BUILD_ROOT = root / "build"
 evaluate.TRAINING_CONFIG_PATH = training
@@ -152,9 +163,11 @@ def test_video_to_compared_models_on_synthetic_data(tmp_path):
     result = json.loads(done.stdout.strip().splitlines()[-1])
 
     assert result["codes"] == {"extract_frames": 0, "build_dataset": 0, "train": 0,
-                               "evaluate": 0}, done.stderr[-3000:]
+                               "prelabel": 0, "evaluate": 0}, done.stderr[-3000:]
     assert result["calls"] == [], f"network reached: {result['calls']}"
     assert f"wrote {FRAMES // STEP} frames" in done.stdout
+    tasks = json.loads((tmp_path / "tasks.json").read_text(encoding="utf-8"))
+    assert len(tasks) == FRAMES // STEP
     rows = {line.rsplit(None, 2)[0]: line.split()[-2:]
             for line in done.stdout.splitlines() if " mAP50" in line}
     assert rows["pen mAP50"][1] == "-"  # the stock model, second column, has no pen
