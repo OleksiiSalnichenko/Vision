@@ -11,7 +11,7 @@ window.STATE =
   "memoryFile": "CLAUDE.md",
   "skillDir": "C:/Users/asaln/.claude/skills/autopilot",
   "startedAt": "2026-09-28T23:46:32+02:00",
-  "updatedAt": "2026-10-03T17:40:43+02:00",
+  "updatedAt": "2026-10-03T21:40:00+02:00",
   "finishedAt": null,
   "stages": [
     {
@@ -50,15 +50,15 @@ window.STATE =
       "id": "build",
       "status": "done",
       "startedAt": "2026-10-03T16:44:44+02:00",
-      "note": "5 з 5 тасків готові",
-      "finishedAt": "2026-10-03T17:40:43+02:00"
+      "note": "7 з 7 тасків готові",
+      "finishedAt": "2026-10-03T21:40:00+02:00"
     },
     {
       "id": "review",
       "status": "done",
       "startedAt": "2026-10-03T16:52:00+02:00",
-      "note": "перевірено 5 з 5",
-      "finishedAt": "2026-10-03T17:40:43+02:00"
+      "note": "перевірено 7 з 7",
+      "finishedAt": "2026-10-03T21:40:00+02:00"
     },
     {
       "id": "final",
@@ -259,11 +259,76 @@ window.STATE =
         "passed": 478,
         "failed": 0
       }
+    },
+    {
+      "id": "06",
+      "title": "Виправлення: імена LS, захист даних, помилки одним реченням",
+      "requirements": [
+        "R07",
+        "R08",
+        "R12",
+        "R14",
+        "R24",
+        "R42i",
+        "G01"
+      ],
+      "zone": [
+        "training/prelabel.py",
+        "training/build_dataset.py",
+        "training/label_studio.py",
+        "training/evaluate.py",
+        "training/README.md"
+      ],
+      "blockedBy": [
+        "05"
+      ],
+      "wave": 4,
+      "status": "done",
+      "startedAt": "2026-10-03T17:41:56+02:00",
+      "retries": 0,
+      "repairs": 2,
+      "handoffs": 0,
+      "finishedAt": "2026-10-03T21:40:00+02:00",
+      "commit": "f28503c",
+      "tests": {
+        "passed": 529,
+        "failed": 0
+      }
+    },
+    {
+      "id": "07",
+      "title": "Виправлення: шлях Kaggle і межа офлайн/мережа",
+      "requirements": [
+        "R09",
+        "R10",
+        "R24",
+        "R43i",
+        "G02"
+      ],
+      "zone": [
+        "training/kaggle_run.py",
+        "training/kaggle/"
+      ],
+      "blockedBy": [
+        "05"
+      ],
+      "wave": 4,
+      "status": "done",
+      "startedAt": "2026-10-03T17:41:56+02:00",
+      "retries": 0,
+      "repairs": 0,
+      "handoffs": 0,
+      "finishedAt": "2026-10-03T21:15:13+02:00",
+      "commit": "53db001",
+      "tests": {
+        "passed": 517,
+        "failed": 0
+      }
     }
   ],
   "singlePass": null,
   "tests": {
-    "passed": 478,
+    "passed": 529,
     "failed": 0
   },
   "debt": {
@@ -316,11 +381,65 @@ window.STATE =
     "T05 tests/test_training_evaluate.py:73 — table parsed by fixed width line[:24]; brittle",
     "T05 training/README.md:107 — Roboflow slugs/licences/counts from search text (403), date of check must be stated",
     "T05 training/README.md:188 — Label Studio click path (local storage, delete tasks) not run; guide does not say so",
-    "T05 tests/test_training_e2e.py — prelabel never runs under a socket trap (story 25)"
+    "T05 tests/test_training_e2e.py — prelabel never runs under a socket trap (story 25)",
+    "T07 training/kaggle_run.py:52 — 404 rule built on fake CLI output; verify on the first real upload",
+    "T07 requirements.txt has ultralytics>=8.4, not a pin; Kaggle pin 8.4.157 tied to the local venv by test",
+    "T07 tests/test_training_boundaries.py:30 — a stale ALLOWED_NETWORKED_IMPORTS entry never goes red; \from training import kaggle_run form not caught",
+    "T06 training/ls_names.py — with no frames on disk an 8-digit dated clip name reads as an upload prefix; build_dataset warns (first name only)"
   ],
   "reviewers": {
     "manifestSpec": "a9bcbf97b11ed7d7e",
     "craft": "a5ba648952a6eb7a2"
   },
-  "blind": null
+  "blind": null,
+  "triage": {
+    "fixNow": {
+      "06": [
+        7,
+        8,
+        9,
+        12,
+        14,
+        15,
+        16,
+        17,
+        18,
+        30,
+        31,
+        33,
+        34,
+        35,
+        36,
+        37
+      ],
+      "07": [
+        11,
+        21,
+        22,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29
+      ]
+    },
+    "report": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      6,
+      10,
+      13,
+      19,
+      20,
+      32
+    ],
+    "drop": {
+      "5": "slug verified in T04",
+      "23": "shared helper landed in T05"
+    }
+  }
 };

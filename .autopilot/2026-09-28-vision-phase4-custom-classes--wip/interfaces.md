@@ -184,3 +184,29 @@ data/training/build/<name>/
 - `training.kaggle.train.no_font_download()` — єдина підміна `check_font`; кличуть `train.py` і
   `evaluate.py`.
 - `training/README.md` — посібник користувача + розділ «For the agent».
+### З таска 07 — виправлення Kaggle
+
+- `kaggle_run.NOT_FOUND = r"\b404\b"`: ненульовий `datasets status` = «датасету нема» лише з 404 у
+  виводі; інше — код 1, одне речення, без `create`. Збій запуску exe — код 1 «cannot run <exe>: …».
+  `upload --yes` пише `dataset-metadata.json` у build і прибирає його в `finally`. Нема місця
+  вставки `settings.py` — код 2, одне речення.
+- `train.main` на Kaggle перекидає `OSError/ValueError/KeyError` далі (повний traceback у лозі
+  ядра, код 1); локально — одне речення, код 2.
+- `tests/test_training_boundaries.ALLOWED_NETWORKED_IMPORTS` — дозволені імпорти офлайн → мережевих
+  модулів; імпорт `training.kaggle.train` і `training.label_studio` під пасткою сокетів і `Popen`.
+### З таска 06 — виправлення розмітки і збирача
+
+- `training.ls_names.frame_name(ls_stem, frames=()) -> str` — єдине правило імені LS: точний кадр
+  на диску виграє; префікс (8 hex `-`, `<digits>-`, `<id>__`) знімається лише коли решта — кадр на
+  диску; з порожнім `frames` вирішує лише шаблон. `disk_frames(root) -> set[str]`,
+  `maybe_dated(ls_stem) -> bool` (попередження збирача, коли кадрів нема).
+- `training.loading.load_model(make, weights)` — будь-який збій завантаження моделі — одне речення
+  (`ValueError`); через нього всі завантаження в `prelabel`, `build_dataset`, `evaluate`.
+- `build_dataset`: `_check_name` у `main` до всього; `_one_each` відмовляє на кадр, експортований
+  двічі (за `frame_name`), до моделі й `rmtree`; `split(items, val_fraction, seed, frames=())`;
+  `FRAMES_ROOT` з `extract_frames` (тести підміняють у кожному модулі окремо).
+- `prelabel`: `TRAINING_ROOT` з `label_studio`, `FRAMES_ROOT` з `extract_frames`; мітки звіряються
+  лише з кадрами під `FRAMES_ROOT` і `--frames` (ніколи `exports/`, `build/`).
+  `labelled_frames(labelled, frames) -> set[str]`.
+- `evaluate.export_size(weights) -> int | None` з `metadata.yaml`; неквадратний експорт і розбіжність
+  з `imgsz` — відмова одним реченням до завантаження; битий рядок мітки — `file:line`, код 2.
