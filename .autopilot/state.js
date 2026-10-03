@@ -1,7 +1,7 @@
 window.STATE =
 {
   "slug": "vision-phase4-custom-classes",
-  "dir": "2026-09-28-vision-phase4-custom-classes--wip",
+  "dir": "2026-09-28-vision-phase4-custom-classes",
   "title": "Vision — фаза 4: власні класи (ручка, квіти)",
   "mode": "semi",
   "depth": "normal",
@@ -11,8 +11,8 @@ window.STATE =
   "memoryFile": "CLAUDE.md",
   "skillDir": "C:/Users/asaln/.claude/skills/autopilot",
   "startedAt": "2026-09-28T23:46:32+02:00",
-  "updatedAt": "2026-10-03T21:40:00+02:00",
-  "finishedAt": null,
+  "updatedAt": "2026-10-03T21:38:59+02:00",
+  "finishedAt": "2026-10-03T21:38:59+02:00",
   "stages": [
     {
       "id": "preflight",
@@ -62,14 +62,15 @@ window.STATE =
     },
     {
       "id": "final",
-      "status": "active",
-      "startedAt": "2026-10-03T17:40:43+02:00"
+      "status": "done",
+      "startedAt": "2026-10-03T17:40:43+02:00",
+      "finishedAt": "2026-10-03T21:38:59+02:00"
     }
   ],
   "requirements": {
     "total": 46,
-    "done": 43,
-    "inTicket": 3,
+    "done": 46,
+    "inTicket": 0,
     "inSpec": 0,
     "placeholder": 0,
     "deferred": 0,
@@ -391,7 +392,15 @@ window.STATE =
     "manifestSpec": "a9bcbf97b11ed7d7e",
     "craft": "a5ba648952a6eb7a2"
   },
-  "blind": null,
+  "blind": {
+    "drift": [],
+    "partial": [
+      "R07 Label Studio setup/start not run (network, server) — config only",
+      "R09/R10 Kaggle push, GPU run and fetch shown as plans only — need account and key",
+      "G03 app class list not checked (app.py not launched); CLI accepted pen in the whitelist"
+    ],
+    "note": "local chain ran end to end on synthetic data with 0 network calls; partials are the out-of-scope real-data steps (G01)"
+  },
   "triage": {
     "fixNow": {
       "06": [

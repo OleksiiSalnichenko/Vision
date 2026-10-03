@@ -38,13 +38,13 @@
 | R29 | «**`core/` must not import from `ui/`** or know how it was launched.» | done | — | spec: Межі: `core/` не імпортує `training/` (тест) → T01 |
 | R30 | «\| Code, comments, logs, README, UI strings \| **all English** \|» | done | — | spec: Історія 27 → T01 |
 | R31 | «Ask before installing anything system-wide.» | done | — | spec: Історія 8; Рішення 3 → T02 |
-| R32 | «Stop after each phase and show me what to run.» | in-ticket | — | spec: Історія 28 → T05 |
+| R32 | «Stop after each phase and show me what to run.» | done | — | spec: Історія 28 → T05 |
 | R33 | «I am new to computer vision. When you make a technical choice, say in one line why — but do not turn the session into a lecture.» | done | — | spec: Історія 27 → T05 |
-| R34 | «If something in `ARCHITECTURE.md` turns out to be wrong once code exists, say so and propose the change rather than quietly working around it.» | in-ticket | — | spec: Історія 29 → T05 |
+| R34 | «If something in `ARCHITECTURE.md` turns out to be wrong once code exists, say so and propose the change rather than quietly working around it.» | done | — | spec: Історія 29 → T05 |
 | R35 | «**A pen is a hard class.** Small, thin, low contrast against a desk. May need `imgsz: 960`, or `yolo26s`, or simply shooting from closer.» | done | — | spec: Історія 23 → T05 |
 | R36 | «**Domain gap.** Internet datasets do not match the user's frames. Own footage is mandatory for custom classes.» | done | — | spec: Історії 15, 24 → T03, T05 |
 | R37 | «**Do not skip `conf_debug`.** Recording near-miss detections between 0.25 and 0.5 in the JSON is the main debugging tool for a missed object.» | done | — | spec: Історія 30 → T05 |
-| R38i | *(мається на увазі)* робота фази 4 здебільшого ручна і в користувача (зйомка, розмітка, акаунт і запуск на Kaggle); треба зрозуміти, що саме будує агент, а що — інструкція для користувача | in-ticket | брифінг: вирішено G01 + G02 — зйомка і розмітка за користувачем, усе інше (інструменти, документація, пізніше навчання через CLI) — за агентом | spec: Рішення; G01 + G02 → T05 |
+| R38i | *(мається на увазі)* робота фази 4 здебільшого ручна і в користувача (зйомка, розмітка, акаунт і запуск на Kaggle); треба зрозуміти, що саме будує агент, а що — інструкція для користувача | done | брифінг: вирішено G01 + G02 — зйомка і розмітка за користувачем, усе інше (інструменти, документація, пізніше навчання через CLI) — за агентом | spec: Рішення; G01 + G02 → T05 |
 | R39i | *(мається на увазі)* дефолтна модель — OpenVINO (docs/adr/0021); `best.pt` має стати OpenVINO-моделлю тим самим `export_openvino.py` | done | — | spec: Історія 4 → T04 |
 | R40i | *(мається на увазі)* `config.yaml` `classes` і `rules.yaml` (класи правил, `handlers.py`) мають працювати з назвами нових класів | done | — | spec: Історія 5 → T04 |
 | R41i | *(мається на увазі)* датасет потрібно поділити на train/val і описати `data.yaml` для навчання YOLO | done | — | spec: Історії 13–14 → T03 |

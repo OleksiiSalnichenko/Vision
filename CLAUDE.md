@@ -9,8 +9,12 @@ pan-tilt camera gets steered with in a later phase. On video and webcam it also
 tracks objects (ByteTrack ids), picks one target, and fires debounced rules from
 `rules.yaml`. Two front ends run the same frame order (`core/pipeline.py`): the CLI
 `detect.py` and the PySide6 desktop app `app.py` (live view, threshold slider, object
-list, events, settings panel with Save to `config.yaml`). Built: phases 0, 0.5, 1, 2
-and 3. Next: phase 4 (custom classes, `training/`).
+list, events, settings panel with Save to `config.yaml`). Built: phases 0, 0.5, 1, 2,
+3 and the phase 4 tooling (`training/`: video → frames → Label Studio → dataset build →
+Kaggle training → local comparison, plus the guide `training/README.md`), verified on
+synthetic data only. The 82-class model (COCO's 80 + `pen`, `flower`) is not trained
+yet: it needs the user's own frames and a Kaggle account (`training/README.md` «For
+the agent» is the session order).
 
 Code, comments, log messages, README and UI strings are **English**.
 Conversation with the user is Ukrainian.
@@ -36,13 +40,29 @@ Conversation with the user is Ukrainian.
 | `venv\Scripts\python app.py --help` | desktop app flags; imports no Qt, opens nothing — the only `app.py` call an agent makes |
 | `venv\Scripts\python app.py --source data/test_images` | desktop app, folder opened once the model is in; Prev/Next, slider, Save. **User only: opens a window** |
 | `venv\Scripts\python app.py` | desktop app, pick a file / folder / camera in the window. **User only** |
-| `venv\Scripts\python -m pytest -q` | tests (324 pass) |
+| `venv\Scripts\python -m pip install -r requirements-training.txt` | phase 4 extras: the `kaggle` CLI into the project venv (online; not installed yet — **ask first**) |
+| `venv\Scripts\python training\extract_frames.py --video data/clip.mp4 --out out\frames --force` | every `frames.step`-th frame → `out\frames\clip_000000.jpg …` (a trial run; without `--out` it goes to `data\training\frames\<video>\`, which the build reads — keep test frames out of there); a non-empty folder needs `--force` |
+| `venv\Scripts\python training\label_studio.py config` | print the Label Studio labeling XML for `training.classes` (offline) |
+| `venv\Scripts\python training\label_studio.py setup` | create `venv-labelstudio\` + pip `label-studio` (online). **Only with the user's yes** |
+| `venv\Scripts\python training\label_studio.py start` | Label Studio on 127.0.0.1:8080 serving `data\training`. **User only: a server** |
+| `venv\Scripts\python training\prelabel.py --weights models\rough.pt --frames data\training\frames --skip-labelled data\training\exports\first50.zip` | model boxes as predictions → `data\training\tasks.json` (offline; `--frames` must be inside `data\training`) |
+| `venv\Scripts\python training\build_dataset.py --export data\training\exports\all.zip --name first` | build `data\training\build\first\` (82 names, pseudo-labels from `model.weights`); `--extra DIR`, `--rough`, `--force` |
+| `venv\Scripts\python training\kaggle_run.py check` | local: `kaggle` exe, key file exists (never read), `kaggle.username`; `ok` or one sentence per gap, exit 2 |
+| `venv\Scripts\python training\kaggle_run.py upload --build first` | prints the plan only; `upload`/`train [--rough]`/`status`/`fetch --name N [--force]` send nothing without `--yes`. **`--yes` only with the user's yes** |
+| `venv\Scripts\python training\evaluate.py --weights models\yolo26n.pt models\pen.pt --build first` | mAP50 / mAP50-95 per new class + `all` shared classes + s/frame, CPU, offline; `--imgsz N` |
+| `venv\Scripts\python -m pytest -q` | tests (529 pass, ~3 min) |
 | `venv\Scripts\python -m pytest -q tests\test_rules.py` | one test file |
 | `venv\Scripts\python -m pytest -q tests\test_ui_window.py` | one Qt test file (offscreen, no window, stub model and camera) |
+| `venv\Scripts\python -m pytest -q tests\test_training_settings.py tests\test_training_boundaries.py` | the fast training checks (schema, offline/network import scan; ~3 s) |
 
 Never plain `python`: the system interpreter is 3.7.3 and must stay untouched.
 The default model is OpenVINO (`model.weights: models/yolo26n_openvino_model`, docs/adr/0021);
 switching back to PyTorch is one line: `model.weights: models/yolo26n.pt`.
+`data\training\exports\*.zip`, `build\first`, `models\rough.pt`, `models\pen.pt` exist only
+once the user has brought data; until then those commands end in one sentence, exit 2.
+`training\kaggle\train.py --data-root BUILD --out DIR --smoke` (1 CPU epoch, imgsz 64) is
+the local proof a build trains; **never run it without `--data-root`** — that is Kaggle
+mode and starts `pip install ultralytics==8.4.157`.
 
 ## Structure
 
@@ -54,6 +74,12 @@ handlers.py          the user's functions for {call: name} rule actions (@on_det
 config.yaml          every number, threshold and path in the project
 rules.yaml           stream rules: debounce, zones, rules (still images ignore it)
 requirements.txt     openvino pinned ==2026.3.1 (see Pitfalls); PySide6, pytest-qt
+requirements-training.txt  `kaggle` (unpinned; the CLI exe, no module imports the package)
+training/            phase 4, run as scripts from the project root: settings, classes,
+                     extract_frames, ls_names, loading, label_studio, prelabel,
+                     build_dataset, kaggle_run, evaluate, kaggle/train.py,
+                     training.yaml, README.md (the user's guide + «For the agent»)
+venv-labelstudio/    Label Studio's own venv (Django pins) — gitignored, made by `setup`
 core/                launch-agnostic modules: types, config, source, detector, tracker,
                      target, rules, geometry, draw, output, events, attributes, aim,
                      pipeline (the frame order both front ends run)
@@ -62,11 +88,16 @@ ui/                  PySide6 only: worker.py (QThread worker), main_window.py, v
 scripts/             fetch_models.py (only networked code), export_openvino.py, grab.py
 models/              *.pt, *_openvino_model/ — gitignored; checksums.txt tracked
 data/test_images/    inputs — gitignored
+data/training/       gitignored (all of data/), created on first use: frames/<video>/<video>_<NNNNNN>.jpg,
+                     exports/ (LS YOLO zips), tasks.json, build/<name>/ {data.yaml (path: .,
+                     names 0..81), images/{train,val}, labels/{train,val} (empty .txt =
+                     negative), training.yaml copy, base weights, manifest.json}
 out/                 <stem>.json, <stem>_annotated.jpg; streams: <stem>.jsonl,
                      <stem>_annotated.mp4 (video only), events/<stem>_<rule>_<index>.jpg
                      — gitignored, overwritten; camera stem is camera_N
 tests/               one file per module + test_detect_cli, test_pipeline, test_offline(_openvino,_ui),
-                     test_bench, test_export, test_ui_{worker,window,settings,view,boundaries}
+                     test_bench, test_export, test_ui_{worker,window,settings,view,boundaries},
+                     test_training_<module> (+ _boundaries, _smoke, _e2e, _train)
 docs/adr/            0001–0021 decision records (0007–0014 phase 2, 0015–0020 phase 3,
                      0021 OpenVINO default, supersedes 0011) — read-only
 ARCHITECTURE.md      design of record — the user's document; see Pitfalls
@@ -257,6 +288,76 @@ README.md            user-facing install / run / config / troubleshooting
   (`<sha256>  <path from project root>`), reports `downloaded` | `skip`.
 - `scripts/grab.py` — `main(argv=None) -> int`, `grab`, `IMAGES_DIR`; uses
   `core.source.open_camera`.
+- `training/training.yaml` — every phase-4 number: `classes` (new names, IDs 80…),
+  `base_weights`, `frames.{step,target_total}`, `dataset.{val_fraction, pseudo_conf,
+  pseudo_iou_drop, internet_fraction, min_negative_fraction, seed}`, `coco.{train_images,
+  val_images}`, `train.{epochs,imgsz,batch}`, `rough.epochs`, `kaggle.{username (empty),
+  dataset_slug, kernel_slug, coco_dataset}`. The runtime never reads it.
+- `training/settings.py` — `load_training(path=TRAINING_CONFIG_PATH) -> TrainingConfig`
+  (frozen: `classes, base_weights, frames, dataset, coco, train, rough, kaggle` sub-dataclasses),
+  `TrainingConfigError(ValueError)` naming the key; missing file → `FileNotFoundError("training
+  config file not found: …")`; unknown key only logged. Imports nothing from `core/` — its
+  source text is embedded into the Kaggle script.
+- `training/classes.py` — `class_names(base_names: dict[int,str], custom) -> list[str]`: base
+  names in ID order, then `custom`; `ValueError` on a clash or base IDs not 0..N-1.
+- `training/extract_frames.py` — `main(argv)` (`--video`, `--out`, `--force`), `extract(video,
+  out_dir, step) -> int` via `core.source.Source(Path, None)` + `imencode`; `FRAMES_ROOT`
+  (`data/training/frames`, imported by `prelabel`/`build_dataset`), `FRAME_SUFFIX`.
+- `training/ls_names.py` — the one Label Studio name rule: `frame_name(ls_stem, frames=())`
+  (exact frame on disk wins; prefix `<8 hex>-` / `<digits>-` / `<digits>__` stripped only when
+  the rest is a frame on disk; empty `frames` → pattern alone), `disk_frames(root) -> set[str]`,
+  `maybe_dated(ls_stem)` (warning when no frames on disk).
+- `training/loading.py` — `load_model(make, weights)`: any load failure → one-line
+  `ValueError("cannot load the model …")`; every model load in prelabel/build/evaluate.
+- `training/label_studio.py` — `main(argv)`: `setup` (venv + pip; 1 on failure, 2 without
+  `py`; `skip:` when installed), `start` (`--internal-host 127.0.0.1`, `NO_REPORTING` env,
+  local-files root `TRAINING_ROOT`), `config`; `labeling_config(classes) -> str`;
+  `IMAGE_NAME="image"`, `LABEL_NAME="label"`, `VENV_DIR`, `TRAINING_ROOT`, `PY_LAUNCHER`, `BIND_HOST`.
+- `training/prelabel.py` — `main(argv)` (`--weights --frames [--out] [--skip-labelled EXPORT]`,
+  default out `data/training/tasks.json`); `tasks(images: dict[Path,(w,h)],
+  detections_by_image, classes, image_root) -> list[dict]` (`/data/local-files/?d=<rel>`,
+  boxes in percent as `predictions`); `labelled_stems(export)` (any `labels/*.txt`, empty
+  too), `labelled_frames(labelled, frames)` (checked against `FRAMES_ROOT` + `--frames`
+  only, never `exports/`/`build/`). Threshold = `model.conf` via `conf_debug=conf`, no `is_debug`.
+- `training/build_dataset.py` — `main(argv)` (`--export --name [--extra DIR] [--rough]
+  [--force]`, exit 0/2); `Item(image, labels: tuple[Label,…]|None, extra=False)`, `Label =
+  (cls_name, cx, cy, w, h)` normalised; `read_ls_export(path, classes, unpack_dir=None)`,
+  `read_extra(path, classes)` (`classes.txt` or `data.yaml`, case-insensitive),
+  `pick_extra(pool, own, fraction, seed) -> (picked, short)`, `pseudo_labels(items,
+  detector, custom, conf, iou_drop)`, `split(items, val_fraction, seed, frames=())` (last
+  block of each video → val), `write_build(out_dir, train, val, names, new_classes, mode,
+  training_yaml, base_weights, force=False) -> Path`. Order in `main`: `_check_name` →
+  config → base weights → export → `_one_each` (frame exported twice) → no-new-class check →
+  model → write. Full mode: `model.weights` labels its classes at `pseudo_conf`, a box with
+  IoU ≥ `pseudo_iou_drop` to a hand box dropped; `--rough`: IDs 0..k-1, no model, no
+  `--extra`. `base_weights` resolves against `PROJECT_ROOT`. Extra images → `extra_NNNNN`.
+- `training/kaggle_run.py` — `main(argv)`: `check` | `upload --build N` | `train [--rough]` |
+  `status` | `fetch --name N [--force]`; the last four print a plan and exit 0 without
+  `--yes`. Exit 2 usage (empty username, missing build, no `kaggle` with `--yes`), 1 the
+  `kaggle` CLI failed. `KAGGLE_EXE: list[str]|None` (venv's `kaggle.exe`, then PATH; tests
+  swap a fake), `KAGGLE_JSON` (existence only), `NOT_FOUND = r"\b404\b"` (`datasets status`
+  non-zero = new dataset only with 404 in the output, else exit 1), `SETTINGS_SLOT` (the
+  `_SETTINGS_SOURCE` line of `train.py` replaced by `settings.py`'s text; missing → exit 2),
+  `BUILD_ROOT`, `MODELS_DIR`. `upload` writes `dataset-metadata.json` into the build and
+  removes it in `finally`; `train` pushes a private GPU+internet script kernel reading the
+  dataset (+ `kaggle.coco_dataset` unless rough); `fetch` → `models/N.pt` +
+  `models/N.metrics.json`, prints sha256 and the export command.
+- `training/kaggle/train.py` — `main(argv)` (`--data-root`, `--coco-root`, `--out`, `--smoke`);
+  no args = Kaggle (pip `ULTRALYTICS_PIN`, finds `manifest.json` and
+  `annotations/instances_train2017.json` ≤ 4 deep under `/kaggle/input`, writes
+  `/kaggle/working`; errors re-raised for the kernel log) — locally one sentence, exit 2.
+  Sets `YOLO_OFFLINE`/`YOLO_AUTOINSTALL` itself (no `core/` on Kaggle). `coco_labels(instances,
+  names, count, seed)` maps COCO by category *name*; `no_font_download()` — the one
+  `check_font` patch; mode from `manifest.json`. Output `best.pt` + `metrics.json` `{mode,
+  epochs, imgsz, names, val_own: {mAP50, per_class}, coco: {base_mAP50, trained_mAP50}|null}`.
+- `training/evaluate.py` — `main(argv)` (`--weights A [B …] --build N [--imgsz N]`, default
+  `model.imgsz`); `val_set(build, model_names, work)` (val copy, labels renumbered by class
+  name per model, absolute `path:`), `score(...) -> {name: (mAP50, mAP50-95)}`,
+  `seconds_per_frame(weights, images, imgsz)` (`bench.warmup`/`runs`), `table(...)` (`all` =
+  mean over classes every model scored, `-` = unknown/no box), `export_size(weights)` (OpenVINO
+  `metadata.yaml`; mismatch with `imgsz` or non-square → exit 2 before loading).
+- `training/README.md` — the user's guide (sections 1–9, troubleshooting table) and «For
+  the agent»: the step order with **[ask]** marks. Keep it in step with the commands.
 - `tests/conftest.py` — `CONFIG_SCHEMA` (values deliberately differ from `config.yaml`),
   `schema_value(dotted)`, `config_text(overrides=None, without=())`, fixture
   `write_config`, `PROJECT_ROOT`. Schema has `display.color = True`.
@@ -299,6 +400,18 @@ in force). Save → `unsaved_values(session, load_config(CONFIG_PATH), MODELS_DI
 `save_values` → `notice_label`. Close → `shutdown` queued → `QThread.wait()` (no
 timeout) → camera released before the window is gone.
 
+Phase 4 (`training/`, separate scripts, nothing in the runtime changes): `extract_frames`
+→ the user labels in Label Studio (own venv, local files) → optional rough path
+(`build_dataset --rough` → `kaggle_run upload/train --rough/status/fetch` → `prelabel` →
+`tasks.json` back into LS) → `build_dataset` (hand boxes + pseudo-labels from
+`model.weights` + optional `--extra`) → `kaggle_run upload`, `train`, `status`, `fetch` →
+`evaluate` → `scripts/export_openvino.py --weights models/<N>.pt` → one line of `config.yaml`.
+The 82-class layout: IDs 0–79 are the current model's names in its order
+(`class_names(detector.names, training.classes)`), then `pen` = 80, `flower` = 81; COCO labels
+and `evaluate` both map by class *name*, never by ID, so `rules.yaml`, `classes` and
+`handlers.py` stay valid. A Label Studio export name goes through `ls_names.frame_name`
+everywhere (prelabel and build can never disagree on which frame a label belongs to).
+
 The load-bearing boundaries:
 
 - **`core/pipeline.py` is the only caller of `is_debug`** (defined in `core/detector.py`).
@@ -336,6 +449,16 @@ The load-bearing boundaries:
   `PROJECT_ROOT`, `ui/worker.py` `detect.prepare_rules`.
 - `config.yaml` is written only by `save_values`, line by line — never by dumping YAML,
   which would drop the user's comments and commented-out lines.
+- **`training/` offline/networked split.** Networked: `label_studio.py` (`setup` pip only),
+  `kaggle_run.py` (`kaggle` exe as a subprocess, only with `--yes`; `check` and every plan are
+  local), `kaggle/train.py` (pip on Kaggle). Every other `training/*.py` is offline and
+  imports no `socket`/`requests`/`urllib`/`http`/`kaggle`, nor a networked module except
+  `tests/test_training_boundaries.ALLOWED_NETWORKED_IMPORTS` (`evaluate` →
+  `training.kaggle.train` for `no_font_download`; `prelabel` → `training.label_studio` for the
+  tag names); a new offline module is scanned automatically. `core/` never imports
+  `training/` (same test). `training/` imports `core/` and `detect` (`configure_console`,
+  `CONFIG_PATH`, `EXIT_USAGE`); a module loading `ultralytics` (directly or via
+  `Detector`) imports `core.detector` first.
 
 ## Code conventions
 
@@ -356,7 +479,14 @@ The load-bearing boundaries:
   8.3 short path, `StreamWriter` writes `.<ascii>.part.mp4` and renames on close.
 - **No NMS.** YOLO26 is NMS-free and removes its own duplicates; the tracker adds none
   either.
-- **No network outside `pip install` and `scripts/fetch_models.py`** — not on streams,
+- Phase-4 numbers live in `training/training.yaml` + `training/settings.py` (same rule: every
+  key required), never in `config.yaml`/`core/config.py`. Training tests take values from
+  `tests/test_training_settings.training_text` / `TRAINING_SCHEMA` / fixture `write_training`.
+- Every `training/` command: `configure_console()` first, a usage error is one sentence on
+  stderr, exit 2, no traceback; exit 1 only for a failed external tool (`kaggle` CLI, pip/venv
+  or Label Studio in `label_studio.py`).
+- **No network outside `pip install`, `scripts/fetch_models.py` and the networked
+  `training/` steps (see Architecture)** — not on streams,
   not with the tracker, not with OpenVINO; the export is offline. `Detector.__init__`
   checks the weights on disk *before* `ultralytics` is imported, so the Ultralytics
   auto-download can never fire.
@@ -388,7 +518,8 @@ The load-bearing boundaries:
 
 ## Tests
 
-`venv\Scripts\python -m pytest -q` → 324 passed. `tests/conftest.py` puts the project
+`venv\Scripts\python -m pytest -q` → 529 passed (~3 min; run single files while working).
+`tests/conftest.py` puts the project
 root on `sys.path`, so `import core` works without installing the package.
 
 No test reaches the network or opens a real camera or an on-screen window; only the
@@ -425,6 +556,15 @@ subprocess offline tests load the real model. The seams:
     scan of `core/` and a Cyrillic grep of `ui/` + `app.py`, no Qt started.
 11. `test_bench` (trap for `Source`/`open_camera`: `camera:0` and `0` must be refused
     first), `test_export`, `test_events`, `test_types`.
+12. `test_training_<module>` — `main(argv)` + pure functions; module paths (`FRAMES_ROOT`,
+    `BUILD_ROOT`, `TRAINING_ROOT`, `MODELS_DIR`, `TRAINING_CONFIG_PATH`, `CONFIG_PATH`,
+    `Detector`) monkeypatched **in each module separately** (they are copied by import);
+    model = `StubDetector`; `kaggle` = a fake exe via `KAGGLE_EXE`; Label Studio never starts.
+    `test_training_boundaries` — AST import scan + importing the networked modules under a
+    socket/`Popen` trap. `test_training_smoke` (train.py `--smoke` → export_openvino →
+    `Detector` with 82 names) and `test_training_e2e` (video → build → train → evaluate on
+    synthetic data) — one subprocess each with sockets trapped, ~1–2 min each, skipped
+    without `models/yolo26n.pt`.
 
 Accepted by eye, not automated: the look of the overlay and of the window, a real
 webcam run (CLI and app), click-to-lock.
@@ -467,6 +607,12 @@ webcam run (CLI and app), click-to-lock.
 - **No agent launches `app.py` except `--help`.** Any other run opens a window on the
   user's screen, and its Open camera / `--source camera:N` holds the webcam until the
   window closes. Drive the app only through `test_ui_*` (offscreen, stubs).
+- **Never run networked training commands (`kaggle_run … --yes`, `label_studio setup`,
+  `pip install -r requirements-training.txt`) without the user's explicit yes in chat; never
+  read or ask for `kaggle.json`** (`%USERPROFILE%\.kaggle\kaggle.json` is the user's API key;
+  `check` tests existence only). Run the subcommand without `--yes` first and show its plan
+  line. No agent runs `label_studio.py start` (a server), installs `label-studio`/`fiftyone`
+  into `venv`, or runs `training\kaggle\train.py` without `--data-root` (Kaggle mode: pip).
 - **Qt tests are offscreen only.** Every Qt test module sets
   `os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")` before its first Qt import; a
   new one must too (and `setdefault` means an outer `QT_QPA_PLATFORM` wins — do not set
@@ -524,6 +670,37 @@ webcam run (CLI and app), click-to-lock.
 - `out\` is overwritten on every run. It is a debugging surface, not an archive.
 - `cv2.imshow` on a machine with no display is not a failed run: `Window` says so
   once on stderr, disables itself and the files still get written.
+- **Ultralytics downloads `Arial.ttf` on every `train`/`val`** (`check_det_dataset` →
+  `check_font`), `YOLO_OFFLINE=1` or not. Call `training.kaggle.train.no_font_download()`
+  before any local `YOLO.train`/`YOLO.val`; the smoke/e2e tests use an empty Ultralytics
+  config dir so a cached font cannot hide the download.
+- **Ultralytics resolves `data.yaml` `path: .` against the cwd**, not the yaml's folder. The
+  build keeps `path: .` (portable to Kaggle); `evaluate.val_set` and `train.py` write a temp
+  yaml with an absolute path. Do the same for any new `YOLO.val` on a build.
+- **Label Studio `--host` only names the URL in links**; the socket binds to
+  `--internal-host` (default 0.0.0.0). `start` passes `--internal-host 127.0.0.1`.
+- `kaggle_run.NOT_FOUND` (`404` in the output of a failed `kaggle datasets status` = first
+  upload → `create`, anything else → exit 1) is not yet checked against the real CLI; nor is
+  anything on a Kaggle GPU (paths under `/kaggle/input`, pip, run time) — the first real run
+  proves it. The `kaggle` package is not installed and not pinned yet.
+- `requirements.txt` says `ultralytics>=8.4` while the Kaggle kernel pins
+  `ultralytics==8.4.157` (`train.ULTRALYTICS_PIN`, the version here). Upgrading locally
+  splits the two and can break the offline switches (8.4.157 reads `YOLO_OFFLINE` once).
+- `training.base_weights` resolves against `PROJECT_ROOT`; `model.weights` (pseudo-labels,
+  `prelabel --weights`, `evaluate --weights`) against the cwd — run from the project root.
+- Label Studio may prefix exported names (`17-`, `17__`, `<8 hex>-`); `frame_name` needs the
+  frames under `data\training\frames` to tell a prefix from a dated clip name
+  (`20261003-desk`). Without them `build_dataset` warns and guesses.
+- `build_dataset --force` empties the build folder (`rmtree`) — but only after the name,
+  config, export and duplicate checks pass. `--name` must be one plain folder name.
+- An OpenVINO export has one fixed `imgsz`; `evaluate` refuses a mismatch with `--imgsz`
+  before loading. Changing `train.imgsz` means rebuild, retrain, `model.imgsz` and
+  `export_openvino.py --force`.
+- `kaggle_run train` trains on whatever build was uploaded last; the mode comes from that
+  build's `manifest.json`, so `train --rough` must follow `upload --build rough`.
+- Module paths in `training/` are imported copies (`FRAMES_ROOT` from `extract_frames` into
+  `prelabel`/`build_dataset`, `TRAINING_ROOT` from `label_studio` into `prelabel`): a test
+  must monkeypatch each importing module, not only the source one.
 
 ## How Autopilot works here
 
