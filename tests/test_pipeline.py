@@ -377,3 +377,15 @@ def test_redraws_of_a_held_frame_never_release_the_lock(config, rule_set):
     run.close()
     assert shown.target.detection.track_id == ids[OTHER.bbox]
     assert shown.target.locked and not shown.target.lost
+
+
+def test_latency_is_the_detector_time_of_the_last_frame_and_a_mean(config, rule_set):
+    run = session(StubDetector([PERSON]), config(), rule_set)
+    assert run.latency == (0.0, 0.0)
+
+    for index in range(3):
+        run.step(stream_frame(index))
+    last, mean = run.latency
+    run.close()
+
+    assert last > 0 and mean > 0

@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 from core.config import Config
@@ -101,6 +102,16 @@ MISSING_EXPORT_MESSAGE = "run scripts/export_openvino.py first"
 OPENVINO_SUFFIX = "_openvino_model"
 
 
+@dataclass(frozen=True)
+class ModelInfo:
+    """What the loaded model is, for display. `None` means the value is not known."""
+
+    weights: str  # as configured
+    size_mb: float | None  # the file, or every file of an OpenVINO folder
+    params: int | None
+    gflops: float | None  # one pass at `model.imgsz`
+
+
 class Detector:
     """Runs one model over frames and returns detections in source pixels."""
 
@@ -125,6 +136,32 @@ class Detector:
     def names(self) -> dict[int, str]:
         """Every class the loaded model knows, id to name (a copy)."""
         return dict(self._model.names)
+
+    def info(self) -> ModelInfo:
+        """Size on disk, parameters and GFLOPs. Slow for OpenVINO: it loads the `.pt` beside it.
+
+        An OpenVINO folder holds no torch network, so parameters and GFLOPs come
+        from the `.pt` it was exported from, when that file is still there.
+        """
+        weights = Path(self._cfg.model.weights)
+        files = [weights] if weights.is_file() else [p for p in weights.rglob("*") if p.is_file()]
+        size_mb = sum(p.stat().st_size for p in files) / 1e6 if files else None
+        params = gflops = None
+        try:
+            network = getattr(self._model, "model", None)
+            if not hasattr(network, "parameters"):
+                from ultralytics import YOLO  # noqa: PLC0415 -- deliberately lazy
+
+                sibling = weights.with_name(weights.name.removesuffix(OPENVINO_SUFFIX) + ".pt")
+                network = YOLO(str(sibling)).model if sibling.is_file() else None
+            if network is not None:
+                from ultralytics.utils.torch_utils import get_flops  # noqa: PLC0415
+
+                params = sum(p.numel() for p in network.parameters())
+                gflops = float(get_flops(network, self._cfg.model.imgsz))
+        except Exception as err:  # noqa: BLE001 -- display only: the numbers stay unknown
+            log.warning("model info unavailable: %s", err)
+        return ModelInfo(str(self._cfg.model.weights), size_mb, params, gflops)
 
     def set_classes(self, classes: list[str]) -> None:
         """Replace the class whitelist; it applies from the next frame.

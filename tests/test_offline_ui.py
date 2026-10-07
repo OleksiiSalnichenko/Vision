@@ -89,7 +89,7 @@ while time.monotonic() < deadline and not warnings:
     time.sleep(0.02)
 
 shown = window.view.has_image()
-rows = window.table.rowCount()
+rows = window.tree.topLevelItemCount()
 window.close()
 
 print(json.dumps({

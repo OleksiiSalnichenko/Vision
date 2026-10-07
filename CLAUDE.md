@@ -50,7 +50,7 @@ Conversation with the user is Ukrainian.
 | `venv\Scripts\python training\kaggle_run.py check` | local: `kaggle` exe, key file exists (never read), `kaggle.username`; `ok` or one sentence per gap, exit 2 |
 | `venv\Scripts\python training\kaggle_run.py upload --build first` | prints the plan only; `upload`/`train [--rough]`/`status`/`fetch --name N [--force]` send nothing without `--yes`. **`--yes` only with the user's yes** |
 | `venv\Scripts\python training\evaluate.py --weights models\yolo26n.pt models\pen.pt --build first` | mAP50 / mAP50-95, P, R, F1, mean IoU per new class + `all` shared classes + s/frame, CPU, offline; writes `<output.dir>\confusion_<model>.png`; `--imgsz N` |
-| `venv\Scripts\python -m pytest -q` | tests (529 pass, ~3 min) |
+| `venv\Scripts\python -m pytest -q` | tests (545 pass, ~5.5 min) |
 | `venv\Scripts\python -m pytest -q tests\test_rules.py` | one test file |
 | `venv\Scripts\python -m pytest -q tests\test_ui_window.py` | one Qt test file (offscreen, no window, stub model and camera) |
 | `venv\Scripts\python -m pytest -q tests\test_training_settings.py tests\test_training_boundaries.py` | the fast training checks (schema, offline/network import scan; ~3 s) |
@@ -145,7 +145,8 @@ README.md            user-facing install / run / config / troubleshooting
   path; nothing else knows the format. Owns every offline switch (see Pitfalls).
   `names -> dict[int, str]` (property, a copy); `set_classes(classes)` swaps the whitelist
   without a reload (`[]` = all; unknown name → `ValueError("unknown class names in
-  config: …")`, filter unchanged).
+  config: …")`, filter unchanged). `info() -> ModelInfo(weights, size_mb, params, gflops)`
+  (None = unknown; an OpenVINO folder loads the `.pt` beside it for params/GFLOPs, so it is slow).
 - `core/tracker.py` — `Tracker(cfg)`, `update(frame, detections) -> list[Detection]`
   (same order, copies with `track_id` set or `None`, inputs untouched, an empty list
   still ages tracks), `reset()`. Wraps Ultralytics `BYTETracker` (Kalman + assignment,
@@ -211,7 +212,7 @@ README.md            user-facing install / run / config / troubleshooting
   `redraw()` (last frame under current cfg/lock, no detector, no rules, no writes,
   `events == ()`; `RuntimeError` before the first `step`); `click(point)`; `retune(cfg,
   want_color)` (next frame on; `Tracker.set_conf`; open files keep their cfg);
-  `set_detector(d)`; `close() -> list[Path]` idempotent; `frames`, `fired`, `fps`.
+  `set_detector(d)`; `close() -> list[Path]` idempotent; `frames`, `fired`, `fps`, `latency -> (last, mean)` detector seconds.
   Actions: `log` → `on_log`, `save_frame` / `call` carried out here.
   `StreamWriteError(OSError)` is the only `OSError` `step` raises for its own writes
   (event frame, JSONL, mp4); an `OSError` from detector/tracker/draw/handler passes
@@ -242,7 +243,7 @@ README.md            user-facing install / run / config / troubleshooting
   `EXIT_USAGE`, no Qt imported; everything later (weights, camera, rules) is a message
   box and the app stays open. `--source` is queued behind `load_model`.
 - `ui/worker.py` — `FramePayload(canvas, drawn, near_miss_count, target_track_id, index,
-  total, fps, source, is_stream)` (frozen; canvas and detections are copies; `total` 0 =
+  total, fps, latency, latency_mean, source, is_stream)` (frozen; canvas and detections are copies; `total` 0 =
   camera). `PipelineWorker(cfg, detector_factory, source_factory, parent=None)` (QObject,
   owns model, source, still cache, `StreamSession`). Slots: `load_model()`,
   `open_source(spec)` (stops the old one; rules → weights → source, like `detect.main`),
@@ -251,7 +252,8 @@ README.md            user-facing install / run / config / troubleshooting
   slider), `show_index(i)` (model once per photo, then `resplit_still` from cache),
   `apply(cfg)` (weights/imgsz changed → rebuild detector, stream keeps tracks; classes →
   `set_classes`; else redraw; keeps `model.conf/conf_debug` — threshold only via
-  `set_conf`), `frame_shown()`. Signals: `model_ready(dict)`, `model_failed(str)`,
+  `set_conf`), `frame_shown()`. Signals: `model_ready(dict)`, `model_info(ModelInfo)` (after it; skipped for a detector
+  without `info`), `model_failed(str)`,
   `frame_ready(FramePayload)`, `event(str)`, `failed(str)`, `finished(summary)`,
   `applied(Config)` — the config really in force (old values after a failed model or
   unknown class).
@@ -262,8 +264,11 @@ README.md            user-facing install / run / config / troubleshooting
   on_disk, models_dir) -> dict` (only `model.weights`, `model.imgsz`, `model.conf`,
   `classes`, `display.center_line`, `display.color`), `saved_text(keys)`,
   `near_miss_text(n)`, `file_filter()`, `MODELS_DIR = PROJECT_ROOT / "models"`,
-  `WINDOW_TITLE`, `*_TEXT`, `COLUMNS`, `TARGET_MARK`. Public widgets are attributes
-  (`view`, `slider`, `table`, `settings`, `status_label`, `notice_label`, buttons …).
+  `WINDOW_TITLE`, `*_TEXT`, `COLUMNS`, `TARGET_MARK`. Objects are a `QTreeWidget` (`tree`): a row per
+  object, children from `detail_lines`; a `metrics` tree (groups Speed / Frame / Model from
+  `speed_rows`, `frame_rows`, `model_rows`); the Find box (`find_classes`, `find_result_text`) narrows
+  the session `classes` through the normal apply path and restores them when cleared. Public widgets are attributes
+  (`view`, `slider`, `tree`, `settings`, `status_label`, `notice_label`, buttons …).
 - `ui/view.py` — `fit_rect`, `to_image_point(widget_point, widget_size, image_size)` (None
   in a bar), `to_qimage(bgr)`; `FrameView(placeholder)` with `show_image`, `clear`,
   signal `clicked(x, y)` in frame pixels.
@@ -521,7 +526,7 @@ The load-bearing boundaries:
 
 ## Tests
 
-`venv\Scripts\python -m pytest -q` → 529 passed (~3 min; run single files while working).
+`venv\Scripts\python -m pytest -q` → 545 passed (~5.5 min; run single files while working).
 `tests/conftest.py` puts the project
 root on `sys.path`, so `import core` works without installing the package.
 

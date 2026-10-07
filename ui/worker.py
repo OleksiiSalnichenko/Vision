@@ -46,7 +46,8 @@ class FramePayload:
     """One frame for the UI thread: data only, sharing no memory with the worker.
 
     `total` is the number of frames the source has, 0 when unknown (a camera).
-    `fps` is 0 for a photo.
+    `fps`, `latency` (the detector's seconds for this frame) and `latency_mean`
+    (over the last frames) are 0 for a photo.
     """
 
     canvas: np.ndarray
@@ -56,6 +57,8 @@ class FramePayload:
     index: int
     total: int
     fps: float
+    latency: float
+    latency_mean: float
     source: str
     is_stream: bool
 
@@ -80,6 +83,7 @@ class PipelineWorker(QObject):
     """
 
     model_ready = Signal(object)  # dict[int, str]; a Qt dict would drop the int keys
+    model_info = Signal(object)  # core.detector.ModelInfo, after model_ready; may be slow
     model_failed = Signal(str)
     frame_ready = Signal(object)
     event = Signal(str)
@@ -128,6 +132,13 @@ class PipelineWorker(QObject):
         if detector is not None:
             self._detector = detector
             self.model_ready.emit(detector.names)
+            self._announce_info(detector)
+
+    def _announce_info(self, detector: Any) -> None:
+        """Say what the model is; a detector without `info` (a test stub) says nothing."""
+        info = getattr(detector, "info", None)
+        if info is not None:
+            self.model_info.emit(info())
 
     def _build(self, cfg: Config) -> Any:
         """A new detector for `cfg`, or None after saying why it could not be built."""
@@ -281,6 +292,7 @@ class PipelineWorker(QObject):
             canvas=result.canvas.copy(), drawn=_copies(result.drawn),
             near_miss_count=len(result.near_miss), target_track_id=None,
             index=still.index, total=len(self._source), fps=0.0,
+            latency=0.0, latency_mean=0.0,
             source=still.source, is_stream=False,
         ))
 
@@ -354,11 +366,13 @@ class PipelineWorker(QObject):
 
     def _emit_stream(self, frame: Frame, result: pipeline.StreamResult) -> None:
         target = result.target.detection
+        latency, latency_mean = self._session.latency
         self._post(FramePayload(
             canvas=result.canvas.copy(), drawn=_copies(result.drawn),
             near_miss_count=len(result.near_miss),
             target_track_id=None if target is None else target.track_id,
             index=frame.index, total=len(self._source), fps=self._session.fps,
+            latency=latency, latency_mean=latency_mean,
             source=frame.source, is_stream=True,
         ))
 
@@ -453,6 +467,7 @@ class PipelineWorker(QObject):
                     self._session.set_detector(detector)
                 rerun = True
                 self.model_ready.emit(detector.names)
+                self._announce_info(detector)
         elif cfg.classes != old.classes and self._detector is not None:
             try:
                 self._detector.set_classes(list(cfg.classes))

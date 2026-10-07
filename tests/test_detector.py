@@ -180,3 +180,11 @@ def test_set_classes_refuses_an_unknown_name_and_keeps_the_filter(stub_detector)
 
 def _refuse(*args, **kwargs):
     raise AssertionError("YOLO must not be touched when the weights file is missing")
+
+
+def test_info_gives_the_size_and_leaves_unknown_what_a_stub_cannot_say(stub_detector):
+    info = stub_detector.info()
+
+    assert info.weights.endswith("stub.pt")
+    assert info.size_mb == pytest.approx(len(b"not a model") / 1e6)
+    assert info.params is None and info.gflops is None

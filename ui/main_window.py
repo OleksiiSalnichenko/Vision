@@ -23,18 +23,21 @@ released before the window is gone.
 from __future__ import annotations
 
 import dataclasses
+from collections import Counter
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal, Slot
+from PySide6.QtCore import QObject, Qt, QStringListModel, QThread, QTimer, Signal, Slot
 from PySide6.QtGui import QBrush, QCloseEvent, QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QCompleter,
     QFileDialog,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QMessageBox,
     QPlainTextEdit,
@@ -43,17 +46,18 @@ from PySide6.QtWidgets import (
     QSpinBox,
     QSplitter,
     QStackedWidget,
-    QTableWidget,
-    QTableWidgetItem,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
 from core.config import Config, ConfigError, load_config, save_values
+from core.detector import ModelInfo
 from core.source import CAMERA_PREFIX, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
 from core.types import Detection
 from detect import CONFIG_PATH, PROJECT_ROOT
-from ui.settings_panel import SettingsPanel, model_entry
+from ui.settings_panel import SettingsPanel, is_openvino, model_entry
 from ui.view import FrameView
 from ui.worker import FramePayload, PipelineWorker
 
@@ -67,20 +71,139 @@ TARGET_MARK = "TARGET"
 COLUMNS = ("#id", "class", "conf", "dx", "dy", "dx %", "dy %", "colour")
 _COLOUR_COLUMN = COLUMNS.index("colour")
 MODEL_READY_TEXT = "Model ready"
+FIND_PLACEHOLDER = "Find a class: person, cell phone"
+NOT_IN_FRAME_TEXT = "not in frame"
+METRIC_GROUPS = ("Speed", "Frame", "Model")
+UNKNOWN = "-"
 NOTHING_TO_SAVE_TEXT = "Nothing to save"
 
 # Presentation constants: the slider works in hundredths, the window's first size.
 _SLIDER_SCALE = 100
 _SLIDER_PAGE_STEP = 5  # hundredths per Page Up / Page Down
 _WINDOW_SIZE = (1280, 800)
+_SPLITTER_SIZES = (640, 380, 260)  # view, objects + metrics, settings; the user can drag them
 _CAMERA_MAX = 99
 _NOTICE_MS = 5000  # how long a one-off result ("Saved: ...") stays in the status bar
 _TARGET_BRUSH = QBrush(Qt.GlobalColor.magenta)
 _TARGET_TEXT = QBrush(Qt.GlobalColor.white)
+_KEY_ROLE = Qt.ItemDataRole.UserRole  # on a top-level row: its track id, or "row<N>" untracked
 
 
 def near_miss_text(count: int) -> str:
     return f"{count} near-miss below threshold (in the files only)"
+
+
+def detail_lines(detection: Detection, frame_size: tuple[int, int],
+                 is_target: bool) -> list[str]:
+    """Every field of one detection, one line each: what the object's row expands to.
+
+    `frame_size` is `(width, height)` in pixels; it only turns the box area into
+    a share of the frame.
+    """
+    x1, y1, x2, y2 = (round(v) for v in detection.bbox)
+    width, height = x2 - x1, y2 - y1
+    area = width * height
+    frame_area = frame_size[0] * frame_size[1]
+    share = f" ({area / frame_area * 100:.1f} % of frame)" if frame_area else ""
+    cx, cy = detection.center
+    lines = [
+        f"track id: {'none' if detection.track_id is None else detection.track_id}",
+        f"class id: {detection.cls_id}",
+        f"confidence: {detection.conf:.4f}",
+        f"bbox (x1, y1, x2, y2): {x1}, {y1}, {x2}, {y2}",
+        f"size (w x h): {width} x {height} px",
+        f"area: {area} px²{share}",
+        f"centre (x, y): {cx}, {cy}",
+        f"dx: {detection.dx:+d} px ({detection.dx_pct * 100:+.1f} % of half frame)",
+        f"dy: {detection.dy:+d} px ({detection.dy_pct * 100:+.1f} % of half frame)",
+    ]
+    if detection.color:
+        lines.append(f"colour: {detection.color}")
+    if is_target:
+        lines.append("target: yes")
+    return lines
+
+
+def _source_name(payload: FramePayload) -> str:
+    return payload.source if payload.source.startswith(CAMERA_PREFIX) \
+        else Path(payload.source).name
+
+
+def _class_counts(drawn: list[Detection]) -> str:
+    return ", ".join(f"{name} ×{count}"
+                     for name, count in Counter(d.cls_name for d in drawn).items())
+
+
+def _milliseconds(seconds: float) -> str:
+    return f"{seconds * 1000:.1f}" if seconds else UNKNOWN
+
+
+def speed_rows(payload: FramePayload) -> list[tuple[str, str]]:
+    """FPS and detector latency; a photo has neither."""
+    fps = f"{payload.fps:.1f}" if payload.is_stream and payload.fps else UNKNOWN
+    return [("FPS", fps), ("Latency, ms", _milliseconds(payload.latency)),
+            ("Latency mean, ms", _milliseconds(payload.latency_mean))]
+
+
+def frame_rows(payload: FramePayload) -> list[tuple[str, str]]:
+    """What is on the frame now: source, size, object count, mean confidence, classes."""
+    height, width = payload.canvas.shape[:2]
+    drawn = payload.drawn
+    mean = f"{sum(d.conf for d in drawn) / len(drawn):.2f}" if drawn else UNKNOWN
+    return [
+        ("Source", _source_name(payload)),
+        ("Frame size", f"{width} x {height} px"),
+        ("Objects", str(len(drawn))),
+        ("Near-miss", str(payload.near_miss_count)),
+        ("Mean confidence", mean),
+        ("Classes", _class_counts(drawn) or UNKNOWN),
+    ]
+
+
+def model_rows(info: ModelInfo | None, imgsz: int, conf: float) -> list[tuple[str, str]]:
+    """The loaded model: file, format, size, parameters, GFLOPs, input size, threshold."""
+    def number(value: float | None, scale: float, digits: int) -> str:
+        return UNKNOWN if value is None else f"{value / scale:.{digits}f}"
+
+    if info is None:
+        name = fmt = size = params = gflops = UNKNOWN
+    else:
+        name = Path(info.weights).name
+        fmt = "OpenVINO" if is_openvino(info.weights) else "PyTorch"
+        size, params = number(info.size_mb, 1, 1), number(info.params, 1e6, 2)
+        gflops = number(info.gflops, 1, 1)
+    return [
+        ("Weights", name),
+        ("Format", fmt),
+        ("Size, MB", size),
+        ("Parameters, M", params),
+        ("GFLOPs", gflops),
+        ("Input size (imgsz)", str(imgsz)),
+        ("Confidence threshold", f"{conf:.2f}"),
+    ]
+
+
+def find_classes(query: str, names) -> tuple[list[str], list[str]]:
+    """Class names a comma-separated query means, and the terms that match none.
+
+    A term is an exact class name (any case) or, failing that, part of one:
+    `phone` finds `cell phone`.
+    """
+    known = list(names)
+    found: list[str] = []
+    unknown: list[str] = []
+    for term in (part.strip().lower() for part in query.split(",")):
+        if not term:
+            continue
+        hits = [n for n in known if n.lower() == term] or [n for n in known if term in n.lower()]
+        if not hits:
+            unknown.append(term)
+        found.extend(n for n in hits if n not in found)
+    return found, unknown
+
+
+def find_result_text(drawn: list[Detection]) -> str:
+    return f"found {len(drawn)}: {_class_counts(drawn)}" if drawn else NOT_IN_FRAME_TEXT
 
 
 def unsaved_values(session: Config, on_disk: Config, models_dir: str | Path) -> dict[str, Any]:
@@ -179,6 +302,10 @@ class MainWindow(QMainWindow):
         self._shown_generation = 0  # the open the frame on screen belongs to
         self._loading = True  # a model is loading: its answer puts the status back
         self._status_before_loading = ""
+        self._model_info: ModelInfo | None = None
+        self._class_names: dict[int, str] = {}
+        self._find_names: list[str] | None = None  # the classes Find narrowed the session to
+        self._find_restore: list[str] = []  # the classes to go back to when Find is cleared
 
         self.setWindowTitle(WINDOW_TITLE)
         self.resize(*_WINDOW_SIZE)
@@ -242,27 +369,56 @@ class MainWindow(QMainWindow):
         threshold.addWidget(self.slider, 1)
         threshold.addWidget(self.slider_value)
 
-        self.table = QTableWidget(0, len(COLUMNS))
-        self.table.setHorizontalHeaderLabels(list(COLUMNS))
-        self.table.verticalHeader().setVisible(False)
-        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.table.setColumnHidden(_COLOUR_COLUMN, not cfg.display.color)
+        # One top-level row per object; its children are the full detail lines.
+        self.tree = QTreeWidget()
+        self.tree.setColumnCount(len(COLUMNS))
+        self.tree.setHeaderLabels(list(COLUMNS))
+        self.tree.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.tree.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self.tree.header().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.tree.setColumnHidden(_COLOUR_COLUMN, not cfg.display.color)
         self.no_objects_label = QLabel(NO_OBJECTS_TEXT)
         self.no_objects_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.objects = QStackedWidget()
         self.objects.addWidget(self.no_objects_label)
-        self.objects.addWidget(self.table)
+        self.objects.addWidget(self.tree)
         self.near_miss_label = QLabel(near_miss_text(0))
+
+        self.find_box = QLineEdit()
+        self.find_box.setPlaceholderText(FIND_PLACEHOLDER)
+        self.find_box.setClearButtonEnabled(True)
+        self.find_completer = QCompleter([])
+        self.find_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.find_box.setCompleter(self.find_completer)
+        self.find_label = QLabel("")
+
+        # Three persistent groups; their rows are replaced on every frame.
+        self.metrics = QTreeWidget()
+        self.metrics.setColumnCount(2)
+        self.metrics.setHeaderLabels(["metric", "value"])
+        self.metrics.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        # The name column fits its longest name; the value column takes the rest.
+        self.metrics.header().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self.metrics.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self._groups: dict[str, QTreeWidgetItem] = {}
+        for name in METRIC_GROUPS:
+            group = QTreeWidgetItem([name])
+            self.metrics.addTopLevelItem(group)
+            group.setExpanded(True)
+            self._groups[name] = group
+        self._set_group("Model", model_rows(None, cfg.model.imgsz, cfg.model.conf))
 
         self.events_list = QPlainTextEdit()
         self.events_list.setReadOnly(True)
 
         side = QVBoxLayout()
         side.addWidget(QLabel("Objects"))
+        side.addWidget(self.find_box)
+        side.addWidget(self.find_label)
         side.addWidget(self.objects, 2)
         side.addWidget(self.near_miss_label)
+        side.addWidget(QLabel("Metrics"))
+        side.addWidget(self.metrics, 1)
         side.addWidget(QLabel("Events"))
         side.addWidget(self.events_list, 1)
         side_widget = QWidget()
@@ -285,6 +441,7 @@ class MainWindow(QMainWindow):
         splitter.addWidget(viewer)
         splitter.addWidget(side_widget)
         splitter.addWidget(self.settings_area)
+        splitter.setSizes(list(_SPLITTER_SIZES))
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 1)
 
@@ -313,6 +470,7 @@ class MainWindow(QMainWindow):
         self.prev_button.clicked.connect(lambda: self._step_photo(-1))
         self.next_button.clicked.connect(lambda: self._step_photo(+1))
         self.slider.valueChanged.connect(self._slider_moved)
+        self.find_box.editingFinished.connect(self._find_changed)
         self.slider.sliderReleased.connect(self._slider_released)
         self.view.clicked.connect(self._view_clicked)
         self.settings.changed.connect(self._settings_changed)
@@ -335,6 +493,7 @@ class MainWindow(QMainWindow):
         self._apply.connect(worker.apply)
         self._frame_shown.connect(worker.frame_shown)
         worker.model_ready.connect(self._model_ready)
+        worker.model_info.connect(self._model_info_ready)
         worker.model_failed.connect(self._model_failed)
         worker.frame_ready.connect(self._frame_ready)
         worker.event.connect(self._event)
@@ -411,9 +570,37 @@ class MainWindow(QMainWindow):
                 self._status_before_loading = self.status_label.text()
             self._loading = True
             self._set_status(LOADING_TEXT)
+        if self._find_names is not None and list(cfg.classes) != self._find_names:
+            self._clear_find()  # the panel chose other classes: Find no longer describes them
         self._sent = cfg
         self._applies_pending += 1
         self._apply.emit(cfg)
+
+    def _find_changed(self) -> None:
+        """Enter in the Find box: narrow the session to the classes it names, or go back."""
+        query = self.find_box.text().strip()
+        if not query:
+            if self._find_names is not None:
+                restore = self._find_restore
+                self._clear_find()
+                self._settings_changed(dataclasses.replace(self._sent, classes=restore))
+            return
+        names, unknown = find_classes(query, self._class_names.values())
+        if unknown:
+            self.find_label.setText(f"unknown class: {', '.join(unknown)}")
+            return
+        if self._find_names is None:
+            self._find_restore = list(self._sent.classes)
+        if names == self._find_names:
+            return
+        self._find_names = names
+        self.find_label.setText("searching…")
+        self._settings_changed(dataclasses.replace(self._sent, classes=names))
+
+    def _clear_find(self) -> None:
+        self._find_names = None
+        self.find_box.clear()
+        self.find_label.setText("")
 
     def _session_config(self) -> Config:
         """The config the panel last sent, with the threshold the slider shows."""
@@ -446,7 +633,13 @@ class MainWindow(QMainWindow):
         self._model_loaded = True
         self._set_open_enabled(True)
         self.settings.set_class_names(names)
+        self._class_names = dict(names)
+        self.find_completer.setModel(QStringListModel(sorted(set(names.values()))))
         self._end_loading()
+
+    def _model_info_ready(self, info: ModelInfo) -> None:
+        self._model_info = info
+        self._refresh_model_rows()
 
     def _model_failed(self, sentence: str) -> None:
         # After a failed switch the old model keeps running (the worker's
@@ -481,7 +674,13 @@ class MainWindow(QMainWindow):
         self._shown_generation = self._live_generation
         self._streaming = payload.is_stream
         self.view.show_image(payload.canvas)
-        self._fill_table(payload.drawn, payload.target_track_id)
+        height, width = payload.canvas.shape[:2]
+        self._fill_tree(payload.drawn, payload.target_track_id, (width, height))
+        self._set_group("Speed", speed_rows(payload))
+        self._set_group("Frame", frame_rows(payload))
+        self._refresh_model_rows()
+        if self._find_names is not None:
+            self.find_label.setText(find_result_text(payload.drawn))
         self.near_miss_label.setText(near_miss_text(payload.near_miss_count))
         self.pause_button.setEnabled(payload.is_stream and payload.total > 0)
         stills = not payload.is_stream
@@ -504,7 +703,7 @@ class MainWindow(QMainWindow):
             # source on screen, so its picture and table would only mislead.
             self._payload = None
             self.view.clear()
-            self._fill_table([], None)
+            self._fill_tree([], None, (0, 0))
             self.near_miss_label.setText(near_miss_text(0))
             for button in (self.stop_button, self.pause_button, self.prev_button,
                            self.next_button):
@@ -530,12 +729,29 @@ class MainWindow(QMainWindow):
         if self._applies_pending == 0:
             self._sent = cfg  # answered in full: a reverted value is the one in force
         self.settings.set_config(cfg)
-        self.table.setColumnHidden(_COLOUR_COLUMN, not cfg.display.color)
+        self.tree.setColumnHidden(_COLOUR_COLUMN, not cfg.display.color)
 
     # --- drawing ----------------------------------------------------------------------
 
-    def _fill_table(self, drawn: list[Detection], target_id: int | None) -> None:
-        self.table.setRowCount(len(drawn))
+    def _set_group(self, name: str, rows: list[tuple[str, str]]) -> None:
+        group = self._groups[name]
+        group.takeChildren()
+        for label, value in rows:
+            group.addChild(QTreeWidgetItem([label, value]))
+
+    def _refresh_model_rows(self) -> None:
+        conf = self.slider.value() / _SLIDER_SCALE
+        self._set_group("Model", model_rows(self._model_info, self._cfg.model.imgsz, conf))
+
+    def _fill_tree(self, drawn: list[Detection], target_id: int | None,
+                   frame_size: tuple[int, int]) -> None:
+        # The tree is rebuilt on every frame; an opened object stays open by its track id
+        # (an untracked one by its row), and the scroll position stays.
+        tree = self.tree
+        opened = {tree.topLevelItem(i).data(0, _KEY_ROLE) for i in range(tree.topLevelItemCount())
+                  if tree.topLevelItem(i).isExpanded()}
+        scroll = tree.verticalScrollBar().value()
+        tree.clear()
         for row, detection in enumerate(drawn):
             is_target = target_id is not None and detection.track_id == target_id
             track = "" if detection.track_id is None else f"#{detection.track_id}"
@@ -551,21 +767,28 @@ class MainWindow(QMainWindow):
                 f"{detection.dy_pct * 100:+.1f}",
                 detection.color or "",
             )
-            for col, value in enumerate(values):
-                item = QTableWidgetItem(value)
-                if is_target:
-                    item.setBackground(_TARGET_BRUSH)
-                    item.setForeground(_TARGET_TEXT)
-                    font = QFont(item.font())
-                    font.setBold(True)
-                    item.setFont(font)
-                self.table.setItem(row, col, item)
-        self.objects.setCurrentWidget(self.table if drawn else self.no_objects_label)
+            key = detection.track_id if detection.track_id is not None else f"row{row}"
+            item = QTreeWidgetItem(list(values))
+            item.setData(0, _KEY_ROLE, key)
+            if is_target:
+                font = QFont(item.font(0))
+                font.setBold(True)
+                for col in range(len(values)):
+                    item.setBackground(col, _TARGET_BRUSH)
+                    item.setForeground(col, _TARGET_TEXT)
+                    item.setFont(col, font)
+            tree.addTopLevelItem(item)
+            for line in detail_lines(detection, frame_size, is_target):
+                child = QTreeWidgetItem([line])
+                item.addChild(child)
+                child.setFirstColumnSpanned(True)
+            item.setExpanded(key in opened)
+        tree.verticalScrollBar().setValue(scroll)
+        self.objects.setCurrentWidget(self.tree if drawn else self.no_objects_label)
 
     @staticmethod
     def _status_text(payload: FramePayload) -> str:
-        name = payload.source if payload.source.startswith(CAMERA_PREFIX) \
-            else Path(payload.source).name
+        name = _source_name(payload)
         position = f"frame {payload.index + 1}"
         if payload.total:
             position += f" / {payload.total}"

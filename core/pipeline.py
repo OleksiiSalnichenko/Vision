@@ -259,6 +259,7 @@ class StreamSession:
         self._engine = RuleEngine(rule_set)
         self._writer: output.StreamWriter | None = None
         self._ticks: deque[float] = deque(maxlen=_FPS_WINDOW)
+        self._latencies: deque[float] = deque(maxlen=_FPS_WINDOW)  # detector seconds per frame
         self._on_screen: list[Detection] = []  # the drawn detections of the last frame
         # The last frame and everything the tracker returned for it, for `redraw`.
         self._last: tuple[Frame, list[Detection]] | None = None
@@ -283,7 +284,10 @@ class StreamSession:
         """
         cfg = self._cfg
         self._ticks.append(time.perf_counter())
-        detections = self._tracker.update(frame, self._detector(frame))
+        started = time.perf_counter()
+        found = self._detector(frame)
+        self._latencies.append(time.perf_counter() - started)
+        detections = self._tracker.update(frame, found)
         drawn, near_miss, target, status, canvas = self._render(frame, detections, new_frame=True)
 
         fired = []
@@ -353,6 +357,13 @@ class StreamSession:
     def fps(self) -> float:
         """Frames per second over the last frames stepped, 0 until there are two."""
         return _fps(self._ticks)
+
+    @property
+    def latency(self) -> tuple[float, float]:
+        """Detector seconds for the last frame and the mean over the last frames; (0, 0) before one."""
+        if not self._latencies:
+            return 0.0, 0.0
+        return self._latencies[-1], sum(self._latencies) / len(self._latencies)
 
     def click(self, point: tuple[float, float]) -> None:
         """Lock onto the tracked box under `point` on the last frame, or release."""

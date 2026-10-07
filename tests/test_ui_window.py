@@ -26,6 +26,7 @@ import app
 from conftest import config_text, schema_value
 from core import events
 from core.config import load_config
+from core.detector import ModelInfo
 from core.types import Detection, Frame
 from ui import main_window
 from ui.main_window import MainWindow
@@ -59,21 +60,29 @@ BOTTLE = detection("bottle", round((CONF + CONF_DEBUG) / 2, 2), (2.0, 2.0, 12.0,
 OTHER = detection("person", 0.9, (60.0, 40.0, 78.0, 58.0), 29, 19)
 
 
+STUB_INFO = ModelInfo("models/stub.pt", size_mb=5.5, params=2_500_000, gflops=6.2)
+
+
 class StubDetector:
     def __init__(self, detections) -> None:
         self.detections = list(detections)
+        self.classes: list[str] = []
 
     @property
     def names(self) -> dict[int, str]:
         return dict(NAMES)
 
+    def info(self) -> ModelInfo:
+        return STUB_INFO
+
     def set_classes(self, classes) -> None:
         unknown = sorted(set(classes) - set(NAMES.values()))
         if unknown:  # the sentence the real Detector gives
             raise ValueError(f"unknown class names in config: {', '.join(unknown)}")
+        self.classes = list(classes)
 
     def __call__(self, frame: Frame) -> list[Detection]:
-        return list(self.detections)
+        return [d for d in self.detections if not self.classes or d.cls_name in self.classes]
 
 
 class FakeSource:
@@ -254,14 +263,14 @@ def wait_ready(qtbot, window):
 
 
 def column(window, name: str) -> int:
-    headers = [window.table.horizontalHeaderItem(i).text()
-               for i in range(window.table.columnCount())]
+    headers = [window.tree.headerItem().text(i)
+               for i in range(window.tree.columnCount())]
     return headers.index(name)
 
 
 def cells(window, name: str) -> list[str]:
     col = column(window, name)
-    return [window.table.item(row, col).text() for row in range(window.table.rowCount())]
+    return [window.tree.topLevelItem(row).text(col) for row in range(window.tree.topLevelItemCount())]
 
 
 # --- start and empty state ---------------------------------------------------------
@@ -273,7 +282,7 @@ def test_opening_a_photo_fills_the_table_with_drawn_objects_only(cfg, make_windo
     wait_ready(qtbot, window)
 
     window.open_source("photos")
-    qtbot.waitUntil(lambda: window.table.rowCount() > 0, timeout=TIMEOUT_MS)
+    qtbot.waitUntil(lambda: window.tree.topLevelItemCount() > 0, timeout=TIMEOUT_MS)
 
     assert cells(window, "class") == ["person"]
     assert cells(window, "#id") == [""]
@@ -281,6 +290,142 @@ def test_opening_a_photo_fills_the_table_with_drawn_objects_only(cfg, make_windo
     assert cells(window, "dx") == ["-2"]
     assert window.near_miss_label.text() == "1 near-miss below threshold (in the files only)"
     assert window.view.has_image()
+
+
+def test_detail_lines_list_every_field_of_a_detection():
+    lines = main_window.detail_lines(PERSON, (100, 50), is_target=False)
+
+    assert lines[0] == "track id: none"
+    assert "confidence: 0.9500" in lines
+    assert "bbox (x1, y1, x2, y2): 30, 20, 46, 36" in lines
+    assert "size (w x h): 16 x 16 px" in lines
+    assert "area: 256 px² (5.1 % of frame)" in lines
+    assert any(line.startswith("dx: -2 px") for line in lines)
+    assert not any(line.startswith(("colour", "target")) for line in lines)
+    marked = main_window.detail_lines(PERSON, (0, 0), is_target=True)
+    assert "target: yes" in marked
+    assert "area: 256 px²" in marked  # no frame size, no share
+
+
+def test_an_object_row_expands_to_its_details(cfg, make_window, qtbot, photos):
+    window = make_window(cfg, [PERSON], {"photos": photos})
+    wait_ready(qtbot, window)
+    window.open_source("photos")
+    qtbot.waitUntil(lambda: window.tree.topLevelItemCount() == 1, timeout=TIMEOUT_MS)
+
+    item = window.tree.topLevelItem(0)
+    assert item.childCount() == len(main_window.detail_lines(PERSON, (1, 1), False))
+    assert item.child(0).text(0) == "track id: none"
+    assert not item.isExpanded()
+
+
+def payload_of(drawn, *, is_stream=True, fps=12.34, latency=0.0215, latency_mean=0.03):
+    return FramePayload(
+        canvas=np.zeros((FRAME_H, FRAME_W, 3), np.uint8), drawn=drawn, near_miss_count=2,
+        target_track_id=None, index=0, total=0, fps=fps, latency=latency,
+        latency_mean=latency_mean, source="D:/clips/walk.mp4", is_stream=is_stream,
+    )
+
+
+def test_speed_rows_show_fps_and_latency_of_a_stream_and_dashes_for_a_photo():
+    stream = dict(main_window.speed_rows(payload_of([])))
+    assert stream == {"FPS": "12.3", "Latency, ms": "21.5", "Latency mean, ms": "30.0"}
+
+    photo = dict(main_window.speed_rows(payload_of([], is_stream=False, fps=0.0, latency=0.0,
+                                                   latency_mean=0.0)))
+    assert set(photo.values()) == {"-"}
+
+
+def test_frame_rows_summarise_the_objects_on_the_frame():
+    rows = dict(main_window.frame_rows(payload_of([PERSON, OTHER, BOTTLE])))
+
+    assert rows["Source"] == "walk.mp4"
+    assert rows["Frame size"] == f"{FRAME_W} x {FRAME_H} px"
+    assert rows["Objects"] == "3" and rows["Near-miss"] == "2"
+    assert rows["Mean confidence"] == f"{(0.95 + 0.9 + BOTTLE.conf) / 3:.2f}"
+    assert rows["Classes"] == "person ×2, bottle ×1"
+    empty = dict(main_window.frame_rows(payload_of([])))
+    assert empty["Mean confidence"] == "-" and empty["Classes"] == "-"
+
+
+def test_model_rows_name_the_model_and_dash_what_is_unknown():
+    rows = dict(main_window.model_rows(STUB_INFO, 640, 0.25))
+    assert rows == {
+        "Weights": "stub.pt", "Format": "PyTorch", "Size, MB": "5.5", "Parameters, M": "2.50",
+        "GFLOPs": "6.2", "Input size (imgsz)": "640", "Confidence threshold": "0.25",
+    }
+    folder = ModelInfo("models/yolo26n_openvino_model", None, None, None)
+    unknown = dict(main_window.model_rows(folder, 640, 0.25))
+    assert unknown["Format"] == "OpenVINO" and unknown["Size, MB"] == "-"
+    assert dict(main_window.model_rows(None, 640, 0.25))["Weights"] == "-"
+
+
+def test_find_classes_takes_exact_names_first_then_parts_of_names():
+    names = ["person", "cell phone", "headphones", "car", "cart"]
+
+    assert main_window.find_classes("Person", names) == (["person"], [])
+    assert main_window.find_classes("car", names) == (["car"], [])  # exact beats "cart"
+    assert main_window.find_classes("phone", names) == (["cell phone", "headphones"], [])
+    assert main_window.find_classes("person, ghost, ,person", names) == (["person"], ["ghost"])
+
+
+def test_the_metrics_tree_fills_from_the_frame_and_the_model(cfg, make_window, qtbot, photos):
+    window = make_window(cfg, [PERSON], {"photos": photos})
+    wait_ready(qtbot, window)
+    qtbot.waitUntil(lambda: dict(group_rows(window, "Model"))["Weights"] == "stub.pt",
+                    timeout=TIMEOUT_MS)
+
+    window.open_source("photos")
+    qtbot.waitUntil(lambda: dict(group_rows(window, "Frame")).get("Objects") == "1",
+                    timeout=TIMEOUT_MS)
+
+    assert dict(group_rows(window, "Frame"))["Classes"] == "person ×1"
+    assert dict(group_rows(window, "Speed"))["FPS"] == "-"
+    assert dict(group_rows(window, "Model"))["Parameters, M"] == "2.50"
+
+
+def group_rows(window, name: str) -> list[tuple[str, str]]:
+    group = window._groups[name]
+    return [(group.child(i).text(0), group.child(i).text(1)) for i in range(group.childCount())]
+
+
+def test_find_narrows_the_session_to_the_class_and_clearing_restores_it(cfg, make_window, qtbot,
+                                                                         photos):
+    high_bottle = detection("bottle", 0.9, (2.0, 2.0, 12.0, 12.0), -33, -23)
+    window = make_window(cfg, [PERSON, high_bottle], {"photos": photos})
+    wait_ready(qtbot, window)
+    window.open_source("photos")
+    qtbot.waitUntil(lambda: window.tree.topLevelItemCount() == 2, timeout=TIMEOUT_MS)
+
+    window.find_box.setText("bottle")
+    window.find_box.editingFinished.emit()
+    qtbot.waitUntil(lambda: cells(window, "class") == ["bottle"], timeout=TIMEOUT_MS)
+    qtbot.waitUntil(lambda: window.find_label.text() == "found 1: bottle ×1", timeout=TIMEOUT_MS)
+    assert window.settings.config().classes == ["bottle"]
+
+    window.find_box.setText("")
+    window.find_box.editingFinished.emit()
+    qtbot.waitUntil(lambda: window.tree.topLevelItemCount() == 2, timeout=TIMEOUT_MS)
+    assert window.find_label.text() == ""
+    assert window.settings.config().classes == []
+
+
+def test_find_says_when_the_class_is_not_in_the_frame_or_not_a_class(cfg, make_window, qtbot,
+                                                                      photos):
+    window = make_window(cfg, [PERSON], {"photos": photos})
+    wait_ready(qtbot, window)
+    window.open_source("photos")
+    qtbot.waitUntil(lambda: window.tree.topLevelItemCount() == 1, timeout=TIMEOUT_MS)
+
+    window.find_box.setText("bottle")
+    window.find_box.editingFinished.emit()
+    qtbot.waitUntil(lambda: window.find_label.text() == "not in frame", timeout=TIMEOUT_MS)
+    assert window.objects.currentWidget() is window.no_objects_label
+
+    window.find_box.setText("ghost")
+    window.find_box.editingFinished.emit()
+    assert window.find_label.text() == "unknown class: ghost"
+    assert window.settings.config().classes == ["bottle"]  # an unknown term changes nothing
 
 
 def test_before_anything_opens_the_window_says_what_to_do(cfg, make_window, qtbot):
@@ -313,7 +458,7 @@ def test_a_source_that_fails_is_said_and_the_window_lives_on(cfg, make_window, q
     qtbot.waitUntil(lambda: warnings == ["cannot open video: broken.mp4"], timeout=TIMEOUT_MS)
 
     window.open_source("photos")
-    qtbot.waitUntil(lambda: window.table.rowCount() == 1, timeout=TIMEOUT_MS)
+    qtbot.waitUntil(lambda: window.tree.topLevelItemCount() == 1, timeout=TIMEOUT_MS)
 
 
 def test_a_source_that_fails_to_open_clears_the_one_it_replaced(cfg, make_window, qtbot,
@@ -370,13 +515,13 @@ def test_slider_redraws_a_photo_and_its_release_rewrites_the_files(cfg, make_win
     window = make_window(cfg, [PERSON, BOTTLE], {"photos": photos})
     wait_ready(qtbot, window)
     window.open_source("photos")
-    qtbot.waitUntil(lambda: window.table.rowCount() == 1, timeout=TIMEOUT_MS)
+    qtbot.waitUntil(lambda: window.tree.topLevelItemCount() == 1, timeout=TIMEOUT_MS)
     json_path = out_dir / "p0.json"
     qtbot.waitUntil(json_path.exists, timeout=TIMEOUT_MS)
 
     window.slider.setSliderDown(True)
     window.slider.setValue(window.slider.minimum())
-    qtbot.waitUntil(lambda: window.table.rowCount() == 2, timeout=TIMEOUT_MS)
+    qtbot.waitUntil(lambda: window.tree.topLevelItemCount() == 2, timeout=TIMEOUT_MS)
     assert window.slider_value.text() == f"{CONF_DEBUG:.2f}"
     assert window.near_miss_label.text().startswith("0 near-miss")
 
@@ -436,7 +581,7 @@ def test_a_frame_queued_by_the_old_source_never_shows_under_the_new_one(cfg, mak
     window = make_window(cfg, [PERSON], {"photos": photos})
     wait_ready(qtbot, window)
     window.open_source("photos")
-    qtbot.waitUntil(lambda: window.table.rowCount() == 1, timeout=TIMEOUT_MS)
+    qtbot.waitUntil(lambda: window.tree.topLevelItemCount() == 1, timeout=TIMEOUT_MS)
     shown: list[int] = []
     show_image = window.view.show_image
     window.view.show_image = lambda canvas: (shown.append(int(canvas[0, 0, 0])),
@@ -447,6 +592,7 @@ def test_a_frame_queued_by_the_old_source_never_shows_under_the_new_one(cfg, mak
     stale = FramePayload(
         canvas=np.full((FRAME_H, FRAME_W, 3), 255, np.uint8), drawn=[OTHER, OTHER],
         near_miss_count=9, target_track_id=None, index=0, total=1, fps=FPS,
+        latency=0.0, latency_mean=0.0,
         source="clip.mp4", is_stream=True,
     )
     window.worker.frame_ready.emit(stale)
@@ -510,14 +656,14 @@ def test_the_panel_is_in_the_window_and_a_change_goes_to_the_worker_at_once(cfg,
     assert [window.settings.classes_list.item(i).text()
             for i in range(window.settings.classes_list.count())] == ["person", "bottle"]
 
-    assert window.table.isColumnHidden(column(window, "colour"))
+    assert window.tree.isColumnHidden(column(window, "colour"))
 
     window.settings.color_check.setChecked(True)
 
     # The column follows the worker's `applied`: the config really reached the worker.
     # (Not qtbot.waitSignal on the worker: its callback runs on the worker's thread,
     # ahead of the window's queued slot.)
-    qtbot.waitUntil(lambda: not window.table.isColumnHidden(column(window, "colour")),
+    qtbot.waitUntil(lambda: not window.tree.isColumnHidden(column(window, "colour")),
                     timeout=TIMEOUT_MS)
 
 
@@ -601,7 +747,7 @@ def test_save_writes_only_what_changed_and_keeps_the_rest_of_the_file(config_cop
     window.slider.setValue(new_conf)
     colour = not cfg.display.color
     window.settings.color_check.setChecked(colour)
-    qtbot.waitUntil(lambda: window.table.isColumnHidden(column(window, "colour")) is not colour,
+    qtbot.waitUntil(lambda: window.tree.isColumnHidden(column(window, "colour")) is not colour,
                     timeout=TIMEOUT_MS)  # the worker has applied it
 
     window.settings.save_button.click()
