@@ -82,6 +82,74 @@ def test_the_table_scores_all_over_the_classes_every_model_knows():
     assert rows["s/frame"] == ["0.050", "0.062"]
 
 
+def _box(cx, cy, size=0.2):
+    return (cx, cy, size, size)
+
+
+def test_boxes_are_paired_best_overlap_first_and_each_used_once():
+    truths = [(0, _box(0.5, 0.5)), (1, _box(0.8, 0.8))]
+    predictions = [(0, _box(0.52, 0.5)), (0, _box(0.9, 0.1)), (1, _box(0.5, 0.5))]
+
+    pairs = evaluate.match_boxes(truths, predictions)
+
+    # Prediction 2 sits exactly on label 0 (IoU 1.0) and wins it over prediction 0 (IoU 0.82).
+    assert [(t, p) for t, p, _ in pairs] == [(0, 2)]
+    assert pairs[0][2] == pytest.approx(1.0)
+    assert evaluate.box_iou(_box(0.5, 0.5), _box(0.6, 0.5)) == pytest.approx(1 / 3)  # worked by hand
+
+
+def test_tally_counts_true_false_and_missed_boxes_per_class():
+    names = {0: "pen", 1: "flower"}
+    images = [
+        # pen found (IoU 1), flower labelled but guessed as pen, one stray flower guess.
+        ([(0, _box(0.2, 0.2)), (1, _box(0.7, 0.7))],
+         [(0, _box(0.2, 0.2)), (0, _box(0.7, 0.7)), (1, _box(0.2, 0.8))]),
+        # pen labelled and missed.
+        ([(0, _box(0.5, 0.5))], []),
+    ]
+
+    quality, confusion = evaluate.tally(images, names)
+
+    # pen: TP 1; FP 1 (the flower taken for a pen); FN 1 (the missed one).
+    pen = quality["pen"]
+    assert (pen.precision, pen.recall, pen.f1) == (0.5, 0.5, 0.5)
+    assert pen.iou == pytest.approx(1.0)
+    # flower: TP 0; FP 1 (stray); FN 1 (taken for a pen) -> recall 0, precision 0, F1 0, no IoU.
+    assert quality["flower"] == evaluate.Quality(precision=0.0, recall=0.0, f1=0.0, iou=None)
+    assert confusion == {(0, 0): 1, (1, 0): 1, (None, 1): 1, (0, None): 1}
+
+
+def test_a_class_without_a_label_gets_no_quality_row_and_no_guess_gives_no_precision():
+    names = {0: "pen", 1: "flower", 2: "cup"}
+    images = [([(0, _box(0.5, 0.5))], [(2, _box(0.1, 0.1))])]
+
+    quality, _ = evaluate.tally(images, names)
+
+    assert set(quality) == {"pen"}  # cup was guessed, never labelled
+    assert quality["pen"].precision is None and quality["pen"].recall == 0.0
+
+
+def test_the_confusion_png_is_a_png_with_the_background_row():
+    from collections import Counter
+
+    data = evaluate.confusion_png(Counter({(0, 0): 3, (0, None): 1, (None, 1): 2}),
+                                  {0: "pen", 1: "flower"})
+
+    assert data.startswith(b"\x89PNG")
+
+
+def test_the_table_adds_quality_rows_when_asked():
+    ap = [{"pen": (0.5, 0.25)}]
+    good = {"pen": evaluate.Quality(precision=0.75, recall=0.5, f1=0.6, iou=None)}
+
+    text = evaluate.table(["a.pt"], ap, [0.05], ["pen"], [good])
+
+    rows = {line.rsplit(None, 1)[0]: line.split()[-1] for line in text.splitlines()[1:]}
+    assert rows["pen P"] == "0.750" and rows["pen R"] == "0.500" and rows["pen F1"] == "0.600"
+    assert rows["pen IoU"] == "-"
+    assert rows["all (1 classes) P"] == "0.750" and rows["all (1 classes) IoU"] == "-"
+
+
 @pytest.fixture
 def setup(tmp_path, monkeypatch):
     """`main` with the build root and training.yaml under `tmp_path`."""
@@ -120,6 +188,10 @@ class FakeYOLO:
 
     def val(self, **kwargs):
         raise AssertionError("no test here gets as far as a val")
+
+    def predict(self, image, **kwargs):
+        boxes = types.SimpleNamespace(cls=np.zeros(0), xywhn=np.zeros((0, 4)))
+        return [types.SimpleNamespace(boxes=boxes)]
 
 
 @pytest.fixture
@@ -265,7 +337,9 @@ def test_a_real_val_stays_offline_with_no_font_cached(tmp_path):
     training = tmp_path / "training.yaml"
     training.write_text(training_text({"classes": ["pen", "flower"]}), encoding="utf-8")
     config = tmp_path / "config.yaml"
-    config.write_text(config_text({"bench.runs": 2, "bench.warmup": 1}), encoding="utf-8")
+    out = tmp_path / "out"
+    config.write_text(config_text({"bench.runs": 2, "bench.warmup": 1,
+                                   "output.dir": out.as_posix()}), encoding="utf-8")
     fonts = tmp_path / "ultralytics-config"  # Ultralytics looks for Arial.ttf here: empty
     fonts.mkdir()
 
@@ -285,7 +359,10 @@ def test_a_real_val_stays_offline_with_no_font_cached(tmp_path):
     assert result["code"] == 0, done.stderr[-2000:]
     assert not list(fonts.rglob("*.ttf"))
     rows = {line.rsplit(None, 1)[0]: line.rsplit(None, 1)[1]
-            for line in done.stdout.splitlines() if "mAP50" in line or "s/frame" in line}
+            for line in done.stdout.splitlines()
+            if "mAP50" in line or "s/frame" in line or "classes) R" in line}
     assert rows["pen mAP50"] == "-"  # the stock model has no pen
     assert rows["all (1 classes) mAP50"] != "-"  # person: known to the model, boxed in val
     assert float(rows["s/frame"]) > 0
+    assert rows["all (1 classes) R"] != "-"  # person is labelled in val (a blank frame: recall 0)
+    assert (out / "confusion_yolo26n.png").read_bytes().startswith(b"\x89PNG")

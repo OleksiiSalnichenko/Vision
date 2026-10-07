@@ -49,7 +49,7 @@ Conversation with the user is Ukrainian.
 | `venv\Scripts\python training\build_dataset.py --export data\training\exports\all.zip --name first` | build `data\training\build\first\` (82 names, pseudo-labels from `model.weights`); `--extra DIR`, `--rough`, `--force` |
 | `venv\Scripts\python training\kaggle_run.py check` | local: `kaggle` exe, key file exists (never read), `kaggle.username`; `ok` or one sentence per gap, exit 2 |
 | `venv\Scripts\python training\kaggle_run.py upload --build first` | prints the plan only; `upload`/`train [--rough]`/`status`/`fetch --name N [--force]` send nothing without `--yes`. **`--yes` only with the user's yes** |
-| `venv\Scripts\python training\evaluate.py --weights models\yolo26n.pt models\pen.pt --build first` | mAP50 / mAP50-95 per new class + `all` shared classes + s/frame, CPU, offline; `--imgsz N` |
+| `venv\Scripts\python training\evaluate.py --weights models\yolo26n.pt models\pen.pt --build first` | mAP50 / mAP50-95, P, R, F1, mean IoU per new class + `all` shared classes + s/frame, CPU, offline; writes `<output.dir>\confusion_<model>.png`; `--imgsz N` |
 | `venv\Scripts\python -m pytest -q` | tests (529 pass, ~3 min) |
 | `venv\Scripts\python -m pytest -q tests\test_rules.py` | one test file |
 | `venv\Scripts\python -m pytest -q tests\test_ui_window.py` | one Qt test file (offscreen, no window, stub model and camera) |
@@ -352,7 +352,10 @@ README.md            user-facing install / run / config / troubleshooting
   epochs, imgsz, names, val_own: {mAP50, per_class}, coco: {base_mAP50, trained_mAP50}|null}`.
 - `training/evaluate.py` — `main(argv)` (`--weights A [B …] --build N [--imgsz N]`, default
   `model.imgsz`); `val_set(build, model_names, work)` (val copy, labels renumbered by class
-  name per model, absolute `path:`), `score(...) -> {name: (mAP50, mAP50-95)}`,
+  name per model, absolute `path:`), `score(weights, build, imgsz, work, conf) -> Scores(ap,
+  quality, confusion, names)` (mAP from `YOLO.val`; P/R/F1/IoU and the confusion counted by
+  `match_boxes`/`tally` at `model.conf`, pairs at `MATCH_IOU` 0.5, class-agnostic, best IoU first;
+  `confusion_png`; a class with no val label gets no quality row),
   `seconds_per_frame(weights, images, imgsz)` (`bench.warmup`/`runs`), `table(...)` (`all` =
   mean over classes every model scored, `-` = unknown/no box), `export_size(weights)` (OpenVINO
   `metadata.yaml`; mismatch with `imgsz` or non-square → exit 2 before loading).

@@ -147,6 +147,7 @@ def test_video_to_compared_models_on_synthetic_data(tmp_path):
     }), encoding="utf-8")
     (tmp_path / "config.yaml").write_text(config_text({
         "model.weights": str(BASE_WEIGHTS), "bench.runs": 2, "bench.warmup": 1,
+        "output.dir": (tmp_path / "results").as_posix(),  # the confusion PNG lands here
     }), encoding="utf-8")
     fonts = tmp_path / "ultralytics-config"  # Ultralytics looks for Arial.ttf here: empty
     fonts.mkdir()

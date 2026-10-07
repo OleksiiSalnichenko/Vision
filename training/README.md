@@ -312,7 +312,15 @@ venv\Scripts\python training\evaluate.py --weights models\pen.pt models\pen-s.pt
 
 For every model: mAP50 and mAP50-95 for `pen` and `flower`, the same for
 `all` classes every compared model knows (with the stock model in the list,
-that is how well the 80 old classes survived), and seconds per frame. Models
+that is how well the 80 old classes survived), and seconds per frame. Under
+each class also come precision (`P`), recall (`R`), `F1` and the mean `IoU` of
+the correct boxes, counted at the app's own threshold (`model.conf`): a box
+counts as found when it overlaps a label by at least 0.5. A confusion matrix
+per model is saved as `<output.dir>\confusion_<model>.png` (labelled classes
+down, predicted across, plus a `background` row and column for missed and
+stray boxes). A class with no labelled box in val gets no `P`/`R`/`F1`/`IoU`
+row, and `-` there means nothing was predicted (no precision) or nothing was
+found (no IoU). Models
 with different class lists (the 2-class rough one, the stock 80, the new 82)
 are scored on the same boxes by class name; `-` means the model does not know
 the class, or val holds no box of it. Also look at `models/pen.metrics.json`:
